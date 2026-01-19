@@ -206,39 +206,28 @@ def render_results(res, match_date, live_odds):
     
     odds_badge = ""
     if live_odds:
-        odds_badge = f"""
-        <div style='margin-top: 5px; font-size: 0.8em; background: #fffbe6; padding: 2px 8px; border-radius: 10px; border: 1px solid #ffe58f; display: inline-block;'>
-            1({live_odds.get('home', '-')}) X({live_odds.get('draw', '-')}) 2({live_odds.get('away', '-')})
-        </div>
-        """
+        odds_badge = f"""<div style='margin-top: 5px; font-size: 0.8em; background: #fffbe6; padding: 2px 8px; border-radius: 10px; border: 1px solid #ffe58f; display: inline-block;'>1({live_odds.get('home', '-')}) X({live_odds.get('draw', '-')}) 2({live_odds.get('away', '-')})</div>"""
 
     st.markdown(f"""
-    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-        <!-- Home Team -->
-        <div style="display: flex; align-items: center; justify-content: flex-end; flex: 1; gap: 10px;">
-            <div style="text-align: right; font-weight: bold; font-size: 1.1rem;">{res['home']}</div>
-            {img_h}
-        </div>
-        
-        <!-- VS -->
-        <div style="padding: 0 15px; text-align: center;">
-            <div style="font-weight: bold; color: #444;">VS</div>
-            <div style="font-size: 0.75em; color: gray;">{match_date.strftime('%H:%M')}</div>
-        </div>
-        
-        <!-- Away Team -->
-        <div style="display: flex; align-items: center; justify-content: flex-start; flex: 1; gap: 10px;">
-            {img_a}
-            <div style="text-align: left; font-weight: bold; font-size: 1.1rem;">{res['away']}</div>
-        </div>
-    </div>
-    
-    <!-- Odds & Date Below -->
-    <div style="text-align: center; margin-bottom: 15px;">
-        <span style="color: gray; font-size: 0.9em;">{match_date.strftime('%d %b %Y')}</span>
-        {odds_badge}
-    </div>
-    """, unsafe_allow_html=True)
+<div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+<div style="display: flex; align-items: center; justify-content: flex-end; flex: 1; gap: 10px;">
+<div style="text-align: right; font-weight: bold; font-size: 1.1rem;">{res['home']}</div>
+{img_h}
+</div>
+<div style="padding: 0 15px; text-align: center;">
+<div style="font-weight: bold; color: #444;">VS</div>
+<div style="font-size: 0.75em; color: gray;">{match_date.strftime('%H:%M')}</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-start; flex: 1; gap: 10px;">
+{img_a}
+<div style="text-align: left; font-weight: bold; font-size: 1.1rem;">{res['away']}</div>
+</div>
+</div>
+<div style="text-align: center; margin-bottom: 15px;">
+<span style="color: gray; font-size: 0.9em;">{match_date.strftime('%d %b %Y')}</span>
+{odds_badge}
+</div>
+""", unsafe_allow_html=True)
 
     # 2. Recommendation Logic
     all_bets = {
