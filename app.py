@@ -125,35 +125,59 @@ class DataService:
 # PREDICTION ENGINE
 # ==============================================================================
 class MatchPredictor:
-    def calculate_lambda(self, team, is_home, df, use_defensive=False):
-        played_games = df.dropna(subset=['xG', 'xG.1'])
-        team_matches = played_games[(played_games['Home'] == team) | (played_games['Away'] == team)].tail(6)
+    def get_league_stats(self, df):
+        played = df.dropna(subset=['xG', 'xG.1'])
+        if played.empty:
+            return 1.3, 1.3  # Default baselines
+        avg_home_xg = played['xG'].mean()
+        avg_away_xg = played['xG.1'].mean()
+        return avg_home_xg, avg_away_xg
+
+    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg):
+        played = df.dropna(subset=['xG', 'xG.1'])
+        team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(8)
         
-        xg_values = []
+        if team_matches.empty:
+            return 1.0, 1.0
+            
+        atk_xg = []
+        def_xg = []
+        
         for _, row in team_matches.iterrows():
-            if use_defensive:
-                val = row['xG.1'] if row['Home'] == team else row['xG']
+            if row['Home'] == team:
+                atk_xg.append(row['xG'])
+                def_xg.append(row['xG.1'])
             else:
-                val = row['xG'] if row['Home'] == team else row['xG.1']
-            xg_values.append(val)
+                atk_xg.append(row['xG.1'])
+                def_xg.append(row['xG'])
                 
-        if not xg_values: 
-            return 1.2 if not use_defensive else 1.0
+        weights = np.arange(1, len(atk_xg) + 1)
+        team_avg_atk = np.average(atk_xg, weights=weights)
+        team_avg_def = np.average(def_xg, weights=weights)
         
-        weights = np.arange(1, len(xg_values) + 1)
-        avg_xg = np.average(xg_values, weights=weights)
-        
-        # Home/Away Strength Adjustments
-        adjustment = (1.12 if is_home else 0.88) if not use_defensive else (0.88 if is_home else 1.12)
-        return avg_xg * adjustment
+        # Strength relative to league
+        if is_home:
+            atk_strength = team_avg_atk / avg_home_xg
+            def_strength = team_avg_def / avg_away_xg
+        else:
+            atk_strength = team_avg_atk / avg_away_xg
+            def_strength = team_avg_def / avg_home_xg
+            
+        return atk_strength, def_strength
 
     def predict_match(self, home_team, away_team, df):
-        h_atk = self.calculate_lambda(home_team, True, df, False)
-        h_def = self.calculate_lambda(home_team, True, df, True)
-        a_atk = self.calculate_lambda(away_team, False, df, False)
-        a_def = self.calculate_lambda(away_team, False, df, True)
+        avg_h_xg, avg_a_xg = self.get_league_stats(df)
         
-        l_home, l_away = (h_atk + a_def) / 2, (a_atk + h_def) / 2
+        h_atk, h_def = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg)
+        a_atk, a_def = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg)
+        
+        # Expected Goals = Team Attack * Opponent Defense * League Average
+        l_home = h_atk * a_def * avg_h_xg
+        l_away = a_atk * h_def * avg_a_xg
+        
+        # Add Home Advantage boost (slight)
+        l_home *= 1.05
+        l_away *= 0.95
         
         h_pmf = poisson.pmf(np.arange(10), l_home)
         a_pmf = poisson.pmf(np.arange(10), l_away)
@@ -165,7 +189,6 @@ class MatchPredictor:
         
         return {
             "home": home_team, "away": away_team,
-            "h_atk": h_atk, "h_def": h_def, "a_atk": a_atk, "a_def": a_def,
             "l_home": l_home, "l_away": l_away,
             "h_win": h_win, "draw": draw_prob, "a_win": a_win,
             "dc_1x": h_win + draw_prob,
@@ -249,21 +272,27 @@ def render_results(res, match_date, live_odds):
         away_odds = live_odds.get('away', 0) if live_odds else 0
         draw_odds = live_odds.get('draw', 0) if live_odds else 0
 
-        # A. Odds Filter (< 1.15) - Softened threshold
-        # If the odds are extremely low, we penalize the probability.
-        # We use a multiplier of 0.3 instead of 0.1 to allow high-probability picks to shine through.
+        # A. Odds Filter & Favorite Prioritization
         current = 0
-        if f"{res['home']} Win" == name: current = home_odds
-        elif f"{res['away']} Win" == name: current = away_odds
-        elif "Draw" == name: current = draw_odds
+        is_favorite_market = False
+        if f"{res['home']} Win" == name: 
+            current = home_odds
+            is_favorite_market = prob > 0.55
+        elif f"{res['away']} Win" == name: 
+            current = away_odds
+            is_favorite_market = prob > 0.55
+        elif "Draw" == name: 
+            current = draw_odds
         
+        # Boost strong favorites to #1 spot if confidence is high
+        if is_favorite_market and (current > 0 and current < 1.60):
+            return prob * 2.0  # Heavier weight for clear wins
+            
         if current > 0 and current < 1.15: return prob * 0.3
 
         # Double Chance Implicit Filtering
-        # If Home Win is < 1.15, 1X is likely negligible value.
         if "Home/Draw (1X)" == name and home_odds > 0 and home_odds < 1.15:
             return prob * 0.3
-        # If Away Win is < 1.15, X2 is likely negligible value.
         if "Away/Draw (X2)" == name and away_odds > 0 and away_odds < 1.15:
             return prob * 0.3
             
@@ -272,8 +301,9 @@ def render_results(res, match_date, live_odds):
             return prob * 0.5
             
         # C. General Penalties
+        if "Over 2.5 Goals" in name: return prob * 1.1 # Favor goals slightly more
         if "Over 1.5 Goals" == name: return prob * 0.70
-        if "Any Winner (12)" in name: return prob * 0.80
+        if "Any Winner (12)" in name: return prob * 0.50 # Penalize 12 more
         return prob
 
     sorted_bets = sorted(all_bets.items(), key=get_sort_score, reverse=True)
