@@ -196,7 +196,11 @@ class MatchPredictor:
             "dc_12": h_win + a_win,
             "btts": (1 - h_pmf[0]) * (1 - a_pmf[0]),
             "over15": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(2) for j in range(2-i)]),
+            "under15": np.sum([h_pmf[i]*a_pmf[j] for i in range(2) for j in range(2-i)]),
             "over25": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)]),
+            "under25": np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)]),
+            "over35": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(4) for j in range(4-i)]),
+            "under35": np.sum([h_pmf[i]*a_pmf[j] for i in range(4) for j in range(4-i)]),
             "h_over15": 1 - h_pmf[0] - h_pmf[1],
             "a_over15": 1 - a_pmf[0] - a_pmf[1],
             "predicted_score": f"{np.unravel_index(matrix.argmax(), matrix.shape)[0]}-{np.unravel_index(matrix.argmax(), matrix.shape)[1]}"
@@ -256,7 +260,10 @@ def render_results(res, match_date, live_odds):
     all_bets = {
         f"{res['home']} Win": res['h_win'], "Draw": res['draw'], f"{res['away']} Win": res['a_win'],
         f"Home/Draw (1X)": res['dc_1x'], f"Away/Draw (X2)": res['dc_x2'], "Any Winner (12)": res['dc_12'],
-        "BTTS Yes": res['btts'], "Over 1.5 Goals": res['over15'], "Over 2.5 Goals": res['over25'],
+        "BTTS Yes": res['btts'], 
+        "Over 1.5 Goals": res['over15'], "Under 1.5 Goals": res['under15'],
+        "Over 2.5 Goals": res['over25'], "Under 2.5 Goals": res['under25'],
+        "Over 3.5 Goals": res['over35'], "Under 3.5 Goals": res['under35'],
         f"{res['home']} Over 1.5 Goals": res['h_over15'], f"{res['away']} Over 1.5 Goals": res['a_over15']
     }
     
@@ -302,11 +309,17 @@ def render_results(res, match_date, live_odds):
             
         # C. General Penalties
         if "Over 2.5 Goals" in name: return prob * 1.1 # Favor goals slightly more
+        if "Under 3.5 Goals" in name: return prob * 1.2 # Favor safety goals
         if "Over 1.5 Goals" == name: return prob * 0.70
         if "Any Winner (12)" in name: return prob * 0.50 # Penalize 12 more
         return prob
 
-    sorted_bets = sorted(all_bets.items(), key=get_sort_score, reverse=True)
+    # Filter by 60% confidence threshold for Top Picks
+    top_eligible = {k: v for k, v in all_bets.items() if v >= 0.60}
+    if not top_eligible: # Fallback if none above 60%
+        top_eligible = all_bets
+        
+    sorted_bets = sorted(top_eligible.items(), key=get_sort_score, reverse=True)
     raw_sorted = sorted(all_bets.items(), key=lambda x: x[1], reverse=True)
     
     # 3. Top Picks UI
@@ -315,10 +328,14 @@ def render_results(res, match_date, live_odds):
         st.warning("⚠️ **Tight Match**: Teams are evenly matched. Focusing on Goal Markets.")
         
     c1, c2 = st.columns(2)
-    c1.markdown(f"**🥇 1. {sorted_bets[0][0]}**")
-    c1.caption(f"Confidence: {sorted_bets[0][1]:.0%}")
-    c2.markdown(f"**🥈 2. {sorted_bets[1][0]}**")
-    c2.caption(f"Confidence: {sorted_bets[1][1]:.0%}")
+    if sorted_bets:
+        c1.markdown(f"**🥇 1. {sorted_bets[0][0]}**")
+        c1.caption(f"Confidence: {sorted_bets[0][1]:.0%}")
+        if len(sorted_bets) > 1:
+            c2.markdown(f"**🥈 2. {sorted_bets[1][0]}**")
+            c2.caption(f"Confidence: {sorted_bets[1][1]:.0%}")
+    else:
+        st.write("No high-confidence picks found.")
     
     # Predicted Score
     st.markdown(f"""
@@ -352,8 +369,9 @@ def render_results(res, match_date, live_odds):
         with g2:
             st.write("Market Probabilities")
             st.write(f"• BTTS: **{res['btts']:.0%}**")
-            st.write(f"• Over 1.5: **{res['over15']:.0%}**")
-            st.write(f"• Over 2.5: **{res['over25']:.0%}**")
+            st.write(f"• Over/Under 1.5: **{res['over15']:.0%}** / **{res['under15']:.0%}**")
+            st.write(f"• Over/Under 2.5: **{res['over25']:.0%}** / **{res['under25']:.0%}**")
+            st.write(f"• Over/Under 3.5: **{res['over35']:.0%}** / **{res['under35']:.0%}**")
         st.caption("Based on 10,000 simulations of Poisson distribution models.")
 
 # ==============================================================================
