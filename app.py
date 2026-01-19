@@ -39,7 +39,8 @@ def fetch_league_data(league_code, season="2024"):
                     'Away': m['a']['title'],
                     'xG': np.nan, 
                     'xG.1': np.nan,
-                    'Score': None
+                    'Score': None,
+                    'DateTime': m['datetime']
                 }
             else:
                 row = {
@@ -47,7 +48,8 @@ def fetch_league_data(league_code, season="2024"):
                     'Away': m['a']['title'],
                     'xG': float(m['xG']['h']),
                     'xG.1': float(m['xG']['a']),
-                    'Score': f"{m['goals']['h']}-{m['goals']['a']}"
+                    'Score': f"{m['goals']['h']}-{m['goals']['a']}",
+                    'DateTime': m['datetime']
                 }
             
             processed_data.append(row)
@@ -65,6 +67,63 @@ def fetch_league_data(league_code, season="2024"):
     except Exception as e:
         st.error(f"Error fetching data: {e}")
         return pd.DataFrame(), []
+
+@st.cache_data(ttl=86400) # Cache for 24 hours
+def fetch_team_logo(team_name):
+    """Fetches team logo URL from TheSportsDB."""
+    try:
+        # Clean name for better search (Understat names usually fine, but simple is better)
+        search_name = team_name.replace(" ", "%20")
+        url = f"https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t={search_name}"
+        r = requests.get(url, timeout=2)
+        data = r.json()
+        if data['teams']:
+            return data['teams'][0]['strBadge']
+    except:
+        pass
+    return None
+
+@st.cache_data(ttl=300) # Cache odds for 5 minutes
+def fetch_live_odds(api_key, sport_key, home_team, away_team):
+    """
+    Fetches live odds from The-Odds-API.
+    Returns a dict with best available odds for H/D/A.
+    """
+    if not api_key:
+        return None
+        
+    try:
+        # 1. Get Odds for the specific sport
+        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?regions=eu&markets=h2h&apiKey={api_key}"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        
+        # 2. Find the match
+        # Fuzzy matching might be needed, but let's try direct first or simplistic fuzzy
+        for match in data:
+            m_home = match['home_team']
+            m_away = match['away_team']
+            
+            # Simple substring match check
+            if (home_team in m_home or m_home in home_team) and (away_team in m_away or m_away in away_team):
+                # Found it! Get best odds.
+                best_odds = {'home': 0, 'draw': 0, 'away': 0}
+                
+                for bookmaker in match['bookmakers']:
+                    for market in bookmaker['markets']:
+                        if market['key'] == 'h2h':
+                            for outcome in market['outcomes']:
+                                if outcome['name'] == m_home and outcome['price'] > best_odds['home']:
+                                    best_odds['home'] = outcome['price']
+                                elif outcome['name'] == m_away and outcome['price'] > best_odds['away']:
+                                    best_odds['away'] = outcome['price']
+                                elif outcome['name'] == 'Draw' and outcome['price'] > best_odds['draw']:
+                                    best_odds['draw'] = outcome['price']
+                return best_odds
+    except Exception as e:
+        # st.error(f"Odds Error: {e}")
+        pass
+    return None
 
 class MatchPredictor:
     def calculate_lambda(self, team, is_home, df, use_defensive=False):
@@ -183,24 +242,58 @@ st.markdown("""
 st.title("⚽ Football Prediction Engine")
 
 # Sidebar - Global Config
-st.sidebar.header("Configuration")
-selected_league_name = st.sidebar.selectbox("Select League", list(LEAGUES.keys()))
-league_code = LEAGUES[selected_league_name]
-selected_season = st.sidebar.selectbox("Season", ["2025", "2024", "2023"], index=0)
+st.sidebar.header("⚙️ Configuration")
+season = st.sidebar.selectbox("Season", ["2025", "2024", "2023"], index=0)
 
-# Data Fetching
-df, teams = None, []
-with st.spinner(f"Loading {selected_league_name}..."):
-    df, teams = fetch_league_data(league_code, season=selected_season)
+# League Mapping for Understat
+leagues = {
+    "Premier League": "EPL",
+    "La Liga": "La_liga",
+    "Serie A": "Serie_A",
+    "Bundesliga": "Bundesliga",
+    "Ligue 1": "Ligue_1",
+    "Russian Premier League": "RFPL"
+}
 
-if df is None or df.empty:
+# League Mapping for The-Odds-API
+odds_api_leagues = {
+    "Premier League": "soccer_epl",
+    "La Liga": "soccer_spain_la_liga",
+    "Serie A": "soccer_italy_serie_a",
+    "Bundesliga": "soccer_germany_bundesliga",
+    "Ligue 1": "soccer_france_ligue_one",
+    "Russian Premier League": "soccer_russia_premier_league" 
+}
+
+selected_league_name = st.sidebar.selectbox("Select League", list(leagues.keys()))
+league_code = leagues[selected_league_name]
+odds_league_key = odds_api_leagues.get(selected_league_name)
+
+# Live Odds Config
+# st.sidebar.markdown("---")
+# st.sidebar.markdown("### 🎲 Live Odds")
+# Replace this with your actual key from the-odds-api.com
+ODDS_API_KEY = "a136f290325a43885ca0bccc99576edb" 
+odds_api_key = ODDS_API_KEY
+
+# --- DATA FETCHING ---
+with st.spinner(f"Fetching data for {selected_league_name}..."):
+    df, teams = fetch_league_data(league_code, season)
+
+if df.empty:
+    st.error("Could not fetch data. Please try again.")
+    st.stop()
     st.warning("⚠️ Could not fetch data. Try another league or season.")
 else:
     # --- MAIN AREA SELECTION (Mobile Friendly) ---
     upcoming_df = df[df['xG'].isna()]
     fixtures = ["Select a Match..."]
     if not upcoming_df.empty:
-        fixture_list = [f"{row['Home']} vs {row['Away']}" for _, row in upcoming_df.iterrows()]
+        # Sort by DateTime
+        upcoming_df['DateTime'] = pd.to_datetime(upcoming_df['DateTime'])
+        upcoming_df = upcoming_df.sort_values(by='DateTime')
+        
+        fixture_list = [f"{row['Home']} vs {row['Away']} ({row['DateTime'].strftime('%Y-%m-%d %H:%M')})" for _, row in upcoming_df.iterrows()]
         fixtures.extend(fixture_list)
 
     # Big Prominent Select Box
@@ -209,15 +302,51 @@ else:
     # Validation & Analysis Trigger
     if selected_fixture != "Select a Match...":
         try:
-            p_home, p_away = selected_fixture.split(" vs ")
+            # Extract names from string like "Home vs Away (Date)"
+            # Split by " (" first to get "Home vs Away"
+            match_part = selected_fixture.split(" (")[0]
+            p_home, p_away = match_part.split(" vs ")
+            
             if p_home in teams and p_away in teams:
                 # Run Prediction Immediately on selection
                 engine = MatchPredictor()
                 res = engine.predict_match(p_home, p_away, df)
                 
+                # Get the date for this match
+                match_date = upcoming_df[(upcoming_df['Home'] == p_home) & (upcoming_df['Away'] == p_away)].iloc[0]['DateTime']
+                
+                # --- LIVE ODDS FETCHING ---
+                live_odds = None
+                if odds_api_key and odds_league_key:
+                    with st.spinner("Checks live odds..."):
+                        live_odds = fetch_live_odds(odds_api_key, odds_league_key, res['home'], res['away'])
+                
                 # --- RESULTS UI ---
                 st.markdown("---")
                 
+                # Logos and Title
+                c_logo_h, c_vs, c_logo_a = st.columns([1, 2, 1])
+                
+                logo_h = fetch_team_logo(res['home'])
+                logo_a = fetch_team_logo(res['away'])
+                
+                with c_logo_h:
+                    if logo_h: st.image(logo_h, width=80)
+                
+                with c_vs:
+                    st.markdown(f"<h3 style='text-align: center; margin-top: 10px; margin-bottom: 0px'>{res['home']} vs {res['away']}</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.9em;'>{match_date.strftime('%d %b %Y, %H:%M')}</p>", unsafe_allow_html=True)
+                    if live_odds:
+                         st.markdown(f"""
+                         <div style='text-align: center; font-size: 0.8em; background: #fffbe6; padding: 5px; border-radius: 5px; border: 1px solid #ffe58f;'>
+                            💰 Odds: 1({live_odds.get('home', '-')}) | X({live_odds.get('draw', '-')}) | 2({live_odds.get('away', '-')})
+                         </div>
+                         """, unsafe_allow_html=True)
+                
+                with c_logo_a:
+                    if logo_a: st.image(logo_a, width=80)
+
+
                 # 1. Recommendation Banner
                 all_bets = {
                     f"{res['home']} Win": res['h_win'],
@@ -237,9 +366,30 @@ else:
                 # Logic: 
                 # 1. Deprioritize "Over 1.5 Goals" (Weight 0.7) - Too obvious/low odds
                 # 2. Deprioritize "Any Winner" (Weight 0.8) - Often safe but boring
-                # 3. Prioritize Goals (Over 2.5, BTTS often have value) - keep weight 1.0
+                # 3. BALANCED MATCH CHECK: If 1X and X2 are close (< 10% diff), penalize ALL result-based bets
+                # 4. VALUE ODDS CHECK: If odds < 1.18, penalize heavily (unimportant)
+                
+                diff_1x_x2 = abs(res['dc_1x'] - res['dc_x2'])
+                is_balanced = diff_1x_x2 < 0.10
+                
                 def get_sort_score(item):
                     name, prob = item
+                    
+                    # Live Odds Filter (< 1.18)
+                    if live_odds:
+                        current_odd = 0
+                        if f"{res['home']} Win" == name: current_odd = live_odds.get('home', 0)
+                        elif f"{res['away']} Win" == name: current_odd = live_odds.get('away', 0)
+                        elif "Draw" == name: current_odd = live_odds.get('draw', 0)
+                        
+                        # Apply heavy penalty if odds exist and are too low
+                        if current_odd > 0 and current_odd < 1.18:
+                            return prob * 0.1 # Kill it (unimportant)
+                    
+                    # If match is balanced, punish Winner/Double Chance markets
+                    if is_balanced and ("Win" in name or "1X" in name or "X2" in name or "12" in name):
+                        return prob * 0.5 # Heavy penalty to force Goal markets to top
+                    
                     if "Over 1.5 Goals" == name:
                         return prob * 0.70
                     if "Any Winner (12)" in name:
@@ -258,6 +408,10 @@ else:
 
                 
                 st.success(f"### 🏆 Top Picks")
+                
+                if is_balanced:
+                   st.warning("⚠️ **Tight Match**: Teams are evenly matched. Focusing on Goal Markets.")
+                   
                 col_r1, col_r2 = st.columns(2)
                 col_r1.markdown(f"**🥇 1. {pick1_name}**")
                 col_r1.caption(f"Confidence: {pick1_prob:.0%}")
