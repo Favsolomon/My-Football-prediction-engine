@@ -196,23 +196,49 @@ def inject_css():
 def render_results(res, match_date, live_odds):
     st.markdown("---")
     
-    # 1. Header (Logos/Title)
-    c_logo_h, c_vs, c_logo_a = st.columns([1, 2, 1])
-    with c_logo_h:
-        logo = DataService.fetch_team_logo(res['home'])
-        if logo: st.image(logo, width=80)
-    with c_vs:
-        st.markdown(f"<h3 style='text-align: center; margin: 10px 0 0 0'>{res['home']} vs {res['away']}</h3>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.9em;'>{match_date.strftime('%d %b %Y, %H:%M')}</p>", unsafe_allow_html=True)
-        if live_odds:
-            st.markdown(f"""
-            <div style='text-align: center; font-size: 0.8em; background: #fffbe6; padding: 5px; border-radius: 5px; border: 1px solid #ffe58f;'>
-            💰 Odds: 1({live_odds.get('home', '-')}) | X({live_odds.get('draw', '-')}) | 2({live_odds.get('away', '-')})
-            </div>
-            """, unsafe_allow_html=True)
-    with c_logo_a:
-        logo = DataService.fetch_team_logo(res['away'])
-        if logo: st.image(logo, width=80)
+    # 1. Header (Logos/Title) - Custom HTML for better mobile alignment
+    logo_h = DataService.fetch_team_logo(res['home'])
+    logo_a = DataService.fetch_team_logo(res['away'])
+    
+    # Defaults if no logo found (optional, or just handle empty src)
+    img_h = f"<img src='{logo_h}' style='height: 60px; object-fit: contain;'>" if logo_h else ""
+    img_a = f"<img src='{logo_a}' style='height: 60px; object-fit: contain;'>" if logo_a else ""
+    
+    odds_badge = ""
+    if live_odds:
+        odds_badge = f"""
+        <div style='margin-top: 5px; font-size: 0.8em; background: #fffbe6; padding: 2px 8px; border-radius: 10px; border: 1px solid #ffe58f; display: inline-block;'>
+            1({live_odds.get('home', '-')}) X({live_odds.get('draw', '-')}) 2({live_odds.get('away', '-')})
+        </div>
+        """
+
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+        <!-- Home Team -->
+        <div style="display: flex; align-items: center; justify-content: flex-end; flex: 1; gap: 10px;">
+            <div style="text-align: right; font-weight: bold; font-size: 1.1rem;">{res['home']}</div>
+            {img_h}
+        </div>
+        
+        <!-- VS -->
+        <div style="padding: 0 15px; text-align: center;">
+            <div style="font-weight: bold; color: #444;">VS</div>
+            <div style="font-size: 0.75em; color: gray;">{match_date.strftime('%H:%M')}</div>
+        </div>
+        
+        <!-- Away Team -->
+        <div style="display: flex; align-items: center; justify-content: flex-start; flex: 1; gap: 10px;">
+            {img_a}
+            <div style="text-align: left; font-weight: bold; font-size: 1.1rem;">{res['away']}</div>
+        </div>
+    </div>
+    
+    <!-- Odds & Date Below -->
+    <div style="text-align: center; margin-bottom: 15px;">
+        <span style="color: gray; font-size: 0.9em;">{match_date.strftime('%d %b %Y')}</span>
+        {odds_badge}
+    </div>
+    """, unsafe_allow_html=True)
 
     # 2. Recommendation Logic
     all_bets = {
@@ -228,13 +254,28 @@ def render_results(res, match_date, live_odds):
     
     def get_sort_score(item):
         name, prob = item
-        # A. Odds Filter (< 1.18)
-        if live_odds:
-            current = 0
-            if f"{res['home']} Win" == name: current = live_odds.get('home', 0)
-            elif f"{res['away']} Win" == name: current = live_odds.get('away', 0)
-            elif "Draw" == name: current = live_odds.get('draw', 0)
-            if current > 0 and current < 1.18: return prob * 0.1
+        
+        # Get live odds for the primary outcomes if available
+        home_odds = live_odds.get('home', 0) if live_odds else 0
+        away_odds = live_odds.get('away', 0) if live_odds else 0
+        draw_odds = live_odds.get('draw', 0) if live_odds else 0
+
+        # A. Odds Filter (< 1.20) - Increased threshold slightly
+        # Direct Win/Draw filtering
+        current = 0
+        if f"{res['home']} Win" == name: current = home_odds
+        elif f"{res['away']} Win" == name: current = away_odds
+        elif "Draw" == name: current = draw_odds
+        
+        if current > 0 and current < 1.20: return prob * 0.1
+
+        # Double Chance Implicit Filtering
+        # If Home Win is < 1.4, 1X is extremely low value (likely < 1.05)
+        if "Home/Draw (1X)" == name and home_odds > 0 and home_odds < 1.25:
+            return prob * 0.05
+        # If Away Win is < 1.4, X2 is extremely low value
+        if "Away/Draw (X2)" == name and away_odds > 0 and away_odds < 1.25:
+            return prob * 0.05
             
         # B. Balanced Penalty
         if is_balanced and any(x in name for x in ["Win", "1X", "X2", "12"]):
