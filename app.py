@@ -135,7 +135,9 @@ class MatchPredictor:
             "dc_12": dc_12,
             "btts": (1 - h_pmf[0]) * (1 - a_pmf[0]),
             "over15": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(2) for j in range(2-i)]),
-            "over25": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)])
+            "over25": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)]),
+            "h_over15": 1 - h_pmf[0] - h_pmf[1],
+            "a_over15": 1 - a_pmf[0] - a_pmf[1]
         }
 
 # --- STREAMLIT UI ---
@@ -225,12 +227,32 @@ else:
                     "Any Winner (12)": res['dc_12'],
                     "BTTS Yes": res['btts'],
                     "Over 1.5 Goals": res['over15'],
-                    "Over 2.5 Goals": res['over25']
+                    "Over 2.5 Goals": res['over25'],
+                    f"{res['home']} Over 1.5 Goals": res['h_over15'],
+                    f"{res['away']} Over 1.5 Goals": res['a_over15']
                 }
-                sorted_bets = sorted(all_bets.items(), key=lambda item: item[1], reverse=True)
-                best_bet, best_prob = sorted_bets[0]
+                
+                # Logic: Deprioritize "Over 1.5 Goals" by multiplying its score by 0.7 
+                # effectively requiring it to be 30% more likely than others to be picked.
+                def get_sort_score(item):
+                    name, prob = item
+                    if "Over 1.5 Goals" == name: # Only the generic total match goals
+                        return prob * 0.7
+                    return prob
 
-                st.success(f"### 🏆 Top Pick: {best_bet} ({best_prob:.0%})")
+                sorted_bets = sorted(all_bets.items(), key=get_sort_score, reverse=True)
+                
+                # Get Top 2 Picks
+                pick1_name, pick1_prob = sorted_bets[0]
+                pick2_name, pick2_prob = sorted_bets[1]
+
+                st.success(f"### 🏆 Top Picks")
+                col_r1, col_r2 = st.columns(2)
+                col_r1.markdown(f"**🥇 1. {pick1_name}**")
+                col_r1.caption(f"Confidence: {pick1_prob:.0%}")
+                
+                col_r2.markdown(f"**🥈 2. {pick2_name}**")
+                col_r2.caption(f"Confidence: {pick2_prob:.0%}")
                 
                 # 2. Main Probabilities (Card Style)
                 with st.container():
@@ -262,5 +284,11 @@ else:
                     
                     st.caption("Based on 10,000 simulations of Poisson distribution models using recent form.")
 
+
         except Exception as e:
             st.error(f"Error analyzing match: {e}")
+
+# --- MOBILE KEYBOARD FIX ---
+# Add extra space at the bottom so the browser can scroll the input box 
+# into view when the mobile keyboard pops up.
+st.markdown("<div style='height: 500px;'></div>", unsafe_allow_html=True)
