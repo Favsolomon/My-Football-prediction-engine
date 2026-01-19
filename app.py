@@ -9,7 +9,7 @@ from understatapi import UnderstatClient
 # --- LOGIC ENGINE ---
 LEAGUES = {
     "Premier League": "EPL",
-    "La Liga": "La_liga",
+    "La Liga": "La_Liga",
     "Serie A": "Serie_A",
     "Bundesliga": "Bundesliga",
     "Ligue 1": "Ligue_1"
@@ -139,168 +139,128 @@ class MatchPredictor:
         }
 
 # --- STREAMLIT UI ---
-st.set_page_config(page_title="Match Predictor PRO", layout="wide")
+st.set_page_config(page_title="Match Predictor PRO", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚽ Fav Football Prediction Engine v4.1 (Smart Bet)")
+# Custom CSS for Mobile-First Card Design
+st.markdown("""
+<style>
+    /* Card Container */
+    .stMetric {
+        background-color: #f0f2f6;
+        padding: 10px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .stMetric label {
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    .stMetric .css-1wivap2 {
+        font-size: 1.5rem !important;
+    }
+    
+    /* Result Card Styling */
+    .result-card {
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+    
+    /* Make metrics center aligned */
+    [data-testid="stMetricValue"] {
+        justify-content: center;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# sidebar
-st.sidebar.header("Match Setup")
+st.title("⚽ Football Prediction Engine")
 
-# 1. League Selection
+# Sidebar - Global Config
+st.sidebar.header("Configuration")
 selected_league_name = st.sidebar.selectbox("Select League", list(LEAGUES.keys()))
 league_code = LEAGUES[selected_league_name]
-
-# 2. Match Details
-st.sidebar.subheader("Configuration")
-
-# Season Selection
 selected_season = st.sidebar.selectbox("Season", ["2025", "2024", "2023"], index=0)
 
-# Data Fetching (Cached or Manual)
+# Data Fetching
 df, teams = None, []
-
-# Try fetching live
-with st.spinner(f"Fetching {selected_league_name} data ({selected_season}) from Understat.com..."):
+with st.spinner(f"Loading {selected_league_name}..."):
     df, teams = fetch_league_data(league_code, season=selected_season)
 
-# Fallback UI if fetch fails
 if df is None or df.empty:
-    st.warning("⚠️ Could not fetch updated data. Switching to Offline Mode.")
-    
-    if st.button("Load Demo Data (Example)"):
-        # Create dummy data for demo
-        data = {
-            'Home': ['Arsenal', 'Liverpool', 'Man City', 'Aston Villa'] * 3,
-            'Away': ['Man City', 'Aston Villa', 'Arsenal', 'Liverpool'] * 3,
-            'xG': [1.5, 2.1, 1.8, 1.2] * 3,
-            'xG.1': [1.1, 0.9, 1.4, 1.3] * 3,
-            'Score': ['1-1', '2-0', '1-2', '1-1'] * 3
-        }
-        df = pd.DataFrame(data)
-        teams = sorted(list(set(df['Home'].unique().tolist() + df['Away'].unique().tolist())))
-        st.success("Demo data loaded!")
-
-if df is not None and not df.empty:
-    # Identify Upcoming Matches (where Score/xG is NaN for actual data, or just create fake ones)
+    st.warning("⚠️ Could not fetch data. Try another league or season.")
+else:
+    # --- MAIN AREA SELECTION (Mobile Friendly) ---
     upcoming_df = df[df['xG'].isna()]
-    
-    # Create list of upcoming fixtures
-    fixtures = ["Custom Match"]
+    fixtures = ["Select a Match..."]
     if not upcoming_df.empty:
-        # Sort by index (date order roughly)
         fixture_list = [f"{row['Home']} vs {row['Away']}" for _, row in upcoming_df.iterrows()]
         fixtures.extend(fixture_list)
 
-    # 3. Fixture Selection
-    selected_fixture = st.sidebar.selectbox("Select Upcoming Match", fixtures)
+    # Big Prominent Select Box
+    selected_fixture = st.selectbox("📅 Choose Upcoming Match", fixtures)
     
-    # Determine default indices based on selection
-    idx_home = 0
-    idx_away = 1 if len(teams) > 1 else 0
-    
-    if selected_fixture != "Custom Match":
+    # Validation & Analysis Trigger
+    if selected_fixture != "Select a Match...":
         try:
             p_home, p_away = selected_fixture.split(" vs ")
             if p_home in teams and p_away in teams:
-                idx_home = teams.index(p_home)
-                idx_away = teams.index(p_away)
-        except:
-            pass
-    
-    # 4. Team Selection
-    home_team = st.sidebar.selectbox("Home Team", teams, index=idx_home)
-    away_team = st.sidebar.selectbox("Away Team", teams, index=idx_away)
-
-    if st.sidebar.button("Analyze Match", type="primary"):
-        if home_team == away_team:
-            st.error("Please select two different teams!")
-        else:
-            engine = MatchPredictor()
-            res = engine.predict_match(home_team, away_team, df)
-            
-            # --- Results Display ---
-            st.subheader(f"📊 {res['home']} vs {res['away']} ({selected_league_name})")
-            
-            # Row 1: Main Outcomes
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Home Win", f"{res['h_win']:.1%}")
-            col2.metric("Draw", f"{res['draw']:.1%}")
-            col3.metric("Away Win", f"{res['a_win']:.1%}")
-
-            # Row 2: Double Chance
-            c1, c2, c3 = st.columns(3)
-            c1.metric("1X (Home/Draw)", f"{res['dc_1x']:.1%}", help="Win if Home wins or Draw")
-            c2.metric("12 (Any Winner)", f"{res['dc_12']:.1%}", help="Win if either team wins")
-            c3.metric("X2 (Away/Draw)", f"{res['dc_x2']:.1%}", help="Win if Away wins or Draw")
-            
-            st.divider()
-            
-            # Goals Analysis
-            g1, g2 = st.columns(2)
-            with g1:
-                st.write("**Expected Goals (Model)**")
-                st.progress(min(res['l_home']/3, 1.0), text=f"{res['home']}: {res['l_home']:.2f}")
-                st.progress(min(res['l_away']/3, 1.0), text=f"{res['away']}: {res['l_away']:.2f}")
-            
-            with g2:
-                st.write("**Market Insights**")
-                st.write(f"✅ **BTTS Yes:** {res['btts']:.1%}")
-                st.write(f"📈 **Over 1.5 Goals:** {res['over15']:.1%}")
-                st.write(f"🔥 **Over 2.5 Goals:** {res['over25']:.1%}")
-
-            # Breakdown Section
-            with st.expander("🕵️ See How Calculation Works"):
-                st.markdown(f"""
-                ### 1. Team Strength (Last 6 Games)
-                The model calculated the following **Attack** and **Defense** ratings based on weighted average xG:
+                # Run Prediction Immediately on selection
+                engine = MatchPredictor()
+                res = engine.predict_match(p_home, p_away, df)
                 
-                *   **{res['home']} Attack:** {res['h_atk']:.2f}
-                *   **{res['home']} Defense:** {res['h_def']:.2f}
-                *   **{res['away']} Attack:** {res['a_atk']:.2f}
-                *   **{res['away']} Defense:** {res['a_def']:.2f}
+                # --- RESULTS UI ---
+                st.markdown("---")
                 
-                ### 2. Math Formula (Poisson)
-                We combine these to find the **Total Expected Goals** for this match:
-                
-                *   **{res['home']} Expected Goals** = ({res['home']} Attack + {res['away']} Defense) / 2 = **{res['l_home']:.2f}**
-                *   **{res['away']} Expected Goals** = ({res['away']} Attack + {res['home']} Defense) / 2 = **{res['l_away']:.2f}**
-                
-                We then simulate the match to get all probabilities.
-                """)
+                # 1. Recommendation Banner
+                all_bets = {
+                    f"{res['home']} Win": res['h_win'],
+                    "Draw": res['draw'],
+                    f"{res['away']} Win": res['a_win'],
+                    f"Home/Draw (1X)": res['dc_1x'],
+                    f"Away/Draw (X2)": res['dc_x2'],
+                    "Any Winner (12)": res['dc_12'],
+                    "BTTS Yes": res['btts'],
+                    "Over 1.5 Goals": res['over15'],
+                    "Over 2.5 Goals": res['over25']
+                }
+                sorted_bets = sorted(all_bets.items(), key=lambda item: item[1], reverse=True)
+                best_bet, best_prob = sorted_bets[0]
 
-            # Verdict Logic - SMART RECOMMENDER
-            # Create a dictionary of all possible bets with their probabilities
-            all_bets = {
-                f"{res['home']} Win": res['h_win'],
-                "Draw": res['draw'],
-                f"{res['away']} Win": res['a_win'],
-                f"{res['home']} or Draw (1X)": res['dc_1x'],
-                f"{res['away']} or Draw (X2)": res['dc_x2'],
-                "Any Winner (12)": res['dc_12'],
-                "BTTS Yes": res['btts'],
-                "BTTS No": 1 - res['btts'],
-                "Over 1.5 Goals": res['over15'],
-                "Under 1.5 Goals": 1 - res['over15'],
-                "Over 2.5 Goals": res['over25'],
-                "Under 2.5 Goals": 1 - res['over25']
-            }
-            
-            # Sort bets by probability (highest first)
-            sorted_bets = sorted(all_bets.items(), key=lambda item: item[1], reverse=True)
-            
-            # Get the #1 safest bet
-            best_bet_name, best_bet_prob = sorted_bets[0]
-            
-            # Find a "Value Bet" (highest probability that isn't a double chance or extremely low odds < 1.10)
-            # Simple logic: First outcome > 55% that isn't Over 0.5 or 1.5 if they are too obvious?
-            # Let's just pick the safest one for now as requested.
-            
-            st.success(f"**🏆 Model Recommendation:** The safest statistical pick is **{best_bet_name}** ({best_bet_prob:.1%})")
-            
-            # Show top 3 probabilities
-            st.write("**Top 3 Probabilities:**")
-            for name, prob in sorted_bets[:3]:
-                st.write(f"- {name}: **{prob:.1%}**")
-else:
-    if df is not None: # Means df is empty but not None
-         st.error("Data loaded but empty. Check the source.")
+                st.success(f"### 🏆 Top Pick: {best_bet} ({best_prob:.0%})")
+                
+                # 2. Main Probabilities (Card Style)
+                with st.container():
+                    st.markdown(f"##### 📊 Match Outcomes")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric(f"{res['home']}", f"{res['h_win']:.0%}")
+                    c2.metric("Draw", f"{res['draw']:.0%}")
+                    c3.metric(f"{res['away']}", f"{res['a_win']:.0%}")
+                    
+                    st.markdown(f"##### 🛡️ Safety (Double Chance)")
+                    d1, d2, d3 = st.columns(3)
+                    d1.metric("1X", f"{res['dc_1x']:.0%}")
+                    d2.metric("12", f"{res['dc_12']:.0%}")
+                    d3.metric("X2", f"{res['dc_x2']:.0%}")
+
+                # 3. Stats & Goals (Expandable)
+                with st.expander("📈 Goal Stats & Analysis", expanded=False):
+                    g1, g2 = st.columns(2)
+                    with g1:
+                        st.write("Expected Goals (xG)")
+                        st.progress(min(res['l_home']/3, 1.0), text=f"{res['home']}: {res['l_home']:.2f}")
+                        st.progress(min(res['l_away']/3, 1.0), text=f"{res['away']}: {res['l_away']:.2f}")
+                    
+                    with g2:
+                        st.write("Market Probabilities")
+                        st.write(f"• BTTS: **{res['btts']:.0%}**")
+                        st.write(f"• Over 1.5: **{res['over15']:.0%}**")
+                        st.write(f"• Over 2.5: **{res['over25']:.0%}**")
+                    
+                    st.caption("Based on 10,000 simulations of Poisson distribution models using recent form.")
+
+        except Exception as e:
+            st.error(f"Error analyzing match: {e}")
