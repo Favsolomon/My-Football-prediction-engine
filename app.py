@@ -137,7 +137,8 @@ class MatchPredictor:
             "over15": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(2) for j in range(2-i)]),
             "over25": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)]),
             "h_over15": 1 - h_pmf[0] - h_pmf[1],
-            "a_over15": 1 - a_pmf[0] - a_pmf[1]
+            "a_over15": 1 - a_pmf[0] - a_pmf[1],
+            "predicted_score": f"{np.unravel_index(matrix.argmax(), matrix.shape)[0]}-{np.unravel_index(matrix.argmax(), matrix.shape)[1]}"
         }
 
 # --- STREAMLIT UI ---
@@ -232,20 +233,30 @@ else:
                     f"{res['away']} Over 1.5 Goals": res['a_over15']
                 }
                 
-                # Logic: Deprioritize "Over 1.5 Goals" by multiplying its score by 0.7 
-                # effectively requiring it to be 30% more likely than others to be picked.
+                
+                # Logic: 
+                # 1. Deprioritize "Over 1.5 Goals" (Weight 0.7) - Too obvious/low odds
+                # 2. Deprioritize "Any Winner" (Weight 0.8) - Often safe but boring
+                # 3. Prioritize Goals (Over 2.5, BTTS often have value) - keep weight 1.0
                 def get_sort_score(item):
                     name, prob = item
-                    if "Over 1.5 Goals" == name: # Only the generic total match goals
-                        return prob * 0.7
+                    if "Over 1.5 Goals" == name:
+                        return prob * 0.70
+                    if "Any Winner (12)" in name:
+                        return prob * 0.80
                     return prob
 
                 sorted_bets = sorted(all_bets.items(), key=get_sort_score, reverse=True)
                 
-                # Get Top 2 Picks
+                # RAW probabilities (Unweighted) for "Most Probable" section
+                raw_sorted = sorted(all_bets.items(), key=lambda x: x[1], reverse=True)
+                most_probable_name, most_probable_prob = raw_sorted[0]
+                
+                # Top 2 Picks (Weighted)
                 pick1_name, pick1_prob = sorted_bets[0]
                 pick2_name, pick2_prob = sorted_bets[1]
 
+                
                 st.success(f"### 🏆 Top Picks")
                 col_r1, col_r2 = st.columns(2)
                 col_r1.markdown(f"**🥇 1. {pick1_name}**")
@@ -253,6 +264,18 @@ else:
                 
                 col_r2.markdown(f"**🥈 2. {pick2_name}**")
                 col_r2.caption(f"Confidence: {pick2_prob:.0%}")
+                
+                # PREDICTED SCORE
+                st.markdown(f"""
+                <div style="text-align: center; margin-top: 10px; padding: 10px; background-color: #e8f5e9; border-radius: 8px;">
+                    <span style="font-size: 0.9rem; color: #2e7d32; font-weight: bold;">🎯 Predicted Score</span>
+                    <br>
+                    <span style="font-size: 1.8rem; font-weight: 800; color: #1b5e20;">{res['predicted_score']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Most Probable Outcome Section
+                st.info(f"**📊 Statistically Most Likely:** {most_probable_name} ({most_probable_prob:.1%})")
                 
                 # 2. Main Probabilities (Card Style)
                 with st.container():
