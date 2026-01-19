@@ -249,22 +249,23 @@ def render_results(res, match_date, live_odds):
         away_odds = live_odds.get('away', 0) if live_odds else 0
         draw_odds = live_odds.get('draw', 0) if live_odds else 0
 
-        # A. Odds Filter (< 1.20) - Increased threshold slightly
-        # Direct Win/Draw filtering
+        # A. Odds Filter (< 1.15) - Softened threshold
+        # If the odds are extremely low, we penalize the probability.
+        # We use a multiplier of 0.3 instead of 0.1 to allow high-probability picks to shine through.
         current = 0
         if f"{res['home']} Win" == name: current = home_odds
         elif f"{res['away']} Win" == name: current = away_odds
         elif "Draw" == name: current = draw_odds
         
-        if current > 0 and current < 1.20: return prob * 0.1
+        if current > 0 and current < 1.15: return prob * 0.3
 
         # Double Chance Implicit Filtering
-        # If Home Win is < 1.4, 1X is extremely low value (likely < 1.05)
-        if "Home/Draw (1X)" == name and home_odds > 0 and home_odds < 1.25:
-            return prob * 0.05
-        # If Away Win is < 1.4, X2 is extremely low value
-        if "Away/Draw (X2)" == name and away_odds > 0 and away_odds < 1.25:
-            return prob * 0.05
+        # If Home Win is < 1.15, 1X is likely negligible value.
+        if "Home/Draw (1X)" == name and home_odds > 0 and home_odds < 1.15:
+            return prob * 0.3
+        # If Away Win is < 1.15, X2 is likely negligible value.
+        if "Away/Draw (X2)" == name and away_odds > 0 and away_odds < 1.15:
+            return prob * 0.3
             
         # B. Balanced Penalty
         if is_balanced and any(x in name for x in ["Win", "1X", "X2", "12"]):
