@@ -227,6 +227,80 @@ APP_CSS = """
         border-radius: 0 8px 8px 0;
         color: var(--app-subtext);
     }
+
+    /* Hero League Discovery Grid */
+    .league-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 25px;
+        margin-top: 40px;
+        padding-bottom: 60px;
+    }
+    
+    .league-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 28px;
+        padding: 45px 20px;
+        text-align: center;
+        transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 10px 30px var(--card-shadow);
+        border-bottom: 4px solid var(--card-border);
+    }
+    
+    .league-card:hover {
+        transform: translateY(-12px);
+        border-color: #3b82f6;
+        border-bottom-color: #3b82f6;
+        box-shadow: 0 20px 45px rgba(59, 130, 246, 0.3);
+    }
+    
+    .league-card-icon {
+        font-size: 3.5rem;
+        margin-bottom: 20px;
+        display: block;
+        filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.2));
+    }
+    
+    .league-card-name {
+        font-weight: 800;
+        font-size: 1.1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--app-text);
+    }
+    
+    .league-card-tag {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        color: #60a5fa;
+        font-weight: 800;
+        margin-top: 10px;
+        opacity: 0.8;
+    }
+
+    .change-btn {
+        background: var(--badge-bg);
+        border: 1px solid var(--card-border);
+        padding: 6px 15px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: var(--app-subtext);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.3s ease;
+        margin-bottom: 20px;
+    }
+    .change-btn:hover {
+        color: var(--app-text);
+        border-color: #3b82f6;
+    }
 </style>
 """
 
@@ -539,7 +613,7 @@ class MatchPredictor:
                 a_ppg = stats['a_pts'] / stats['a_gp']
                 if a_ppg > 1.8: atk_strength *= 1.05
                 
-        return atk_strength, def_strength
+        return atk_strength, def_strength, pedigree, squad_val
 
     def get_h2h_history(self, home, away, df):
         """Analyzes Head-to-Head history for tactical trends."""
@@ -924,23 +998,75 @@ def render_match_results(res, match_date, live_odds=None, df=None):
         render_advanced_intelligence(res, df)
 
 # ==============================================================================
+# UI COMPONENTS (LANDING & DISCOVERY)
+# ==============================================================================
+def render_league_selector():
+    """Renders the high-tech immersive league selection grid."""
+    st.markdown("""
+    <div style="text-align: center; margin-top: 20px; margin-bottom: 40px;">
+        <h1 style="font-size: 3.5rem; font-weight: 800; margin-bottom: 10px;">MATCH INTELLIGENCE</h1>
+        <p style="font-size: 1.1rem; color: #94a3b8; letter-spacing: 0.2em;">SELECT YOUR THEATER OF OPERATION</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    leagues = [
+        ("Champions League", "🏆", "Elite European Nights"),
+        ("Premier League", "🦁", "World's Best League"),
+        ("La Liga", "🇪🇸", "The Home of Technicians"),
+        ("Serie A", "🇮🇹", "Tactical Masterclass"),
+        ("Bundesliga", "🇩🇪", "Pure Intensity"),
+        ("Ligue 1", "🇫🇷", "The Talent Factory"),
+        ("Russian Premier League", "🐻", "Northern Resistance")
+    ]
+    
+    cols = st.columns(3)
+    for i, (name, icon, tag) in enumerate(leagues):
+        with cols[i % 3]:
+            if st.button(name, key=f"btn_{name}", use_container_width=True):
+                st.session_state.selected_league = name
+                st.rerun()
+            
+            # Use HTML overlay for the gamified look while button handles logic
+            st.markdown(f"""
+            <div class="league-card" style="pointer-events: none; margin-top: -45px; margin-bottom: 25px;">
+                <span class="league-card-icon">{icon}</span>
+                <div class="league-card-name">{name}</div>
+                <div class="league-card-tag">{tag}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ==============================================================================
 # MAIN APP FLOW
 # ==============================================================================
 def main():
     inject_css()
-    st.title("⚽ Football Prediction Engine")
     
-    # Sidebar
-    st.sidebar.header("⚙️ Configuration")
+    # State Management for Navigation
+    if 'selected_league' not in st.session_state:
+        st.session_state.selected_league = None
+    
+    if not st.session_state.selected_league:
+        render_league_selector()
+        return
+
+    # Sidebar (Simplified after selection)
+    st.sidebar.markdown(f"### 🏟️ {st.session_state.selected_league}")
+    if st.sidebar.button("◀ Return to Selector", use_container_width=True):
+        st.session_state.selected_league = None
+        st.rerun()
+        
+    st.sidebar.divider()
     season = st.sidebar.selectbox("Season", ["2025", "2024", "2023"], index=0)
-    selected_league = st.sidebar.selectbox("Select League", list(LEAGUES_UNDERSTAT.keys()))
+    selected_league = st.session_state.selected_league
+    
+    # Rest of the App Logic (Same as before but using selected_league from state)
+    st.title(f"⚽ {selected_league}")
     
     is_ucl = selected_league == "Champions League"
     df = pd.DataFrame()
     
     if is_ucl:
-        with st.spinner("Fetching Champions League Data..."):
-            # Pull master domestic data for all supported leagues
+        with st.spinner("Compiling global dataset for UCL..."):
             master_dfs = []
             for l_name, l_code in LEAGUES_UNDERSTAT.items():
                 if l_code != "UCL":
@@ -949,29 +1075,25 @@ def main():
             df = pd.concat(master_dfs) if master_dfs else pd.DataFrame()
             upcoming = DataService.fetch_ucl_fixtures(ODDS_API_KEY, LEAGUES_ODDS_API[selected_league])
     else:
-        with st.spinner(f"Fetching {selected_league}..."):
+        with st.spinner(f"Initiating {selected_league} Stream..."):
             df, _ = DataService.fetch_league_data(LEAGUES_UNDERSTAT[selected_league], season)
             upcoming = df[df['xG'].isna()].copy()
         
     if df.empty and not is_ucl:
-        st.error("Could not fetch data."); st.stop()
+        st.error("Protocol Error: Could not fetch data stream."); st.stop()
 
     if not upcoming.empty:
         upcoming['DateTime'] = pd.to_datetime(upcoming['DateTime'])
         upcoming = upcoming.sort_values('DateTime')
         
         options = [f"{r['Home']} vs {r['Away']} ({r['DateTime'].strftime('%Y-%m-%d %H:%M')})" for _, r in upcoming.iterrows()]
-        selection = st.selectbox("📅 Choose Match", ["Select a Match..."] + options)
+        selection = st.selectbox("📅 Choose Active Target", ["Select a Match..."] + options)
         
         if selection != "Select a Match...":
             try:
                 match_str = selection.split(" (")[0]; home, away = match_str.split(" vs ")
-                
-                # Normalize names for cross-API matching
                 home_norm = DataService.normalize_team_name(home)
                 away_norm = DataService.normalize_team_name(away)
-                
-                # Fetch Odds
                 live_odds = DataService.fetch_live_odds(ODDS_API_KEY, LEAGUES_ODDS_API[selected_league], home, away)
                 
                 predictor = MatchPredictor()
@@ -980,7 +1102,7 @@ def main():
                 
                 render_match_results(res, match_date, live_odds, df)
             except Exception as e:
-                st.error(f"Analysis Error: {e}")
+                st.error(f"Analysis Failure: {e}")
 
     st.markdown("<div style='height: 500px;'></div>", unsafe_allow_html=True)
 
