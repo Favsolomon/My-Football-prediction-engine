@@ -4,6 +4,8 @@ import numpy as np
 from scipy.stats import poisson
 import requests
 from understatapi import UnderstatClient
+import concurrent.futures
+from datetime import datetime
 
 # ==============================================================================
 # CONFIGURATION & CONSTANTS
@@ -25,7 +27,7 @@ LEAGUES_UNDERSTAT = {
 }
 
 LEAGUES_ODDS_API = {
-    "Champions League": "soccer_uefa_champions_league",
+    "Champions League": "soccer_uefa_champs_league",
     "Premier League": "soccer_epl",
     "La Liga": "soccer_spain_la_liga",
     "Serie A": "soccer_italy_serie_a",
@@ -96,16 +98,25 @@ APP_CSS = """
         color: var(--app-text) !important;
     }
     
-    * { font-family: 'Outfit', sans-serif; }
-    .stApp { background: var(--app-bg); }
+    * { 
+        font-family: 'Outfit', sans-serif; 
+        box-sizing: border-box;
+    }
+    .stApp { 
+        background: var(--app-bg); 
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
     
     .glass-card {
         background: var(--card-bg);
         border: 1px solid var(--card-border);
-        border-radius: 16px;
+        border-radius: 20px;
         padding: 20px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px var(--card-shadow);
         margin-bottom: 20px;
-        box-shadow: 0 4px 20px var(--card-shadow);
+        width: 100%;
     }
 
     .hero-card {
@@ -227,6 +238,48 @@ APP_CSS = """
         border-radius: 0 8px 8px 0;
         color: var(--app-subtext);
     }
+
+    /* Master Tab Navigation */
+    .tab-container {
+        display: flex;
+        gap: 10px;
+        padding: 10px 0;
+        overflow-x: auto;
+        margin-bottom: 25px;
+        border-bottom: 1px solid var(--card-border);
+        scrollbar-width: none;
+    }
+    .tab-container::-webkit-scrollbar { display: none; }
+    
+    .tab-item {
+        padding: 10px 20px;
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        font-weight: 600;
+        font-size: 0.85rem;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        opacity: 0.7;
+    }
+    .tab-item:hover {
+        opacity: 1;
+        border-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.05);
+        transform: translateY(-2px);
+    }
+    .tab-active {
+        background: var(--hero-grad) !important;
+        color: white !important;
+        opacity: 1;
+        border-color: transparent;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    }
+    .tab-icon { font-size: 1.1rem; }
 
     /* Hero League Discovery Grid */
     .league-grid {
@@ -424,6 +477,45 @@ class DataService:
         except:
             pass
         return None
+    @staticmethod
+    def parallel_ucl_fetch(season):
+        """Ultra-fast parallel aggregator for UCL domestic data."""
+        domestic_leagues = [c for c in LEAGUES_UNDERSTAT.values() if c != "UCL"]
+        master_dfs = []
+        
+        def fetch_worker(code):
+            d, _ = DataService.fetch_league_data(code, season)
+            p, _ = DataService.fetch_league_data(code, str(int(season)-1))
+            return [d, p]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
+            results = list(executor.map(fetch_worker, domestic_leagues))
+            for res in results:
+                master_dfs.extend(res)
+                
+        return pd.concat(master_dfs) if master_dfs else pd.DataFrame()
+
+    @staticmethod
+    def preload_competition_context(league_name, season="2025"):
+        """Background loader worker for simultaneous league fetching."""
+        is_ucl = league_name == "Champions League"
+        league_code = LEAGUES_UNDERSTAT[league_name]
+        
+        if is_ucl:
+            df = DataService.parallel_ucl_fetch(season)
+            upcoming = DataService.fetch_ucl_fixtures(ODDS_API_KEY, LEAGUES_ODDS_API[league_name])
+        else:
+            d_df, _ = DataService.fetch_league_data(league_code, season)
+            df = d_df
+            upcoming = d_df[d_df['xg'].isna() if 'xg' in d_df.columns else d_df['xG'].isna()].copy()
+
+        # PRE-FETCH LOGOS: Parallelize asset fetching
+        if not upcoming.empty:
+            unique_teams = pd.concat([upcoming['Home'], upcoming['Away']]).unique()
+            for team in unique_teams[:10]:
+                DataService.fetch_team_logo(team)
+            
+        return league_name, {"df": df, "upcoming": upcoming}
 
 # ==============================================================================
 # PREDICTION ENGINE
@@ -534,26 +626,30 @@ class MatchPredictor:
             "h_xp": h_xp, "a_xp": a_xp, "avg_goals": np.mean(h_sims + a_sims)
         }
 
-    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg, league_table=None, elo=None):
-        """Calculates strength using Elo-weighted xG and League Quality Multipliers."""
+    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg, league_table=None, elo=None, is_ucl=False):
+        """Calculates strength using Elo-weighted xG and context-aware Multipliers."""
         played = df.dropna(subset=['xG', 'xG.1'])
-        team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(8)
+        # User Request: Prioritize last 5 games for recency
+        team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(5)
         
-        # League Quality Coefficients
+        # League Quality Coefficients (Only strictly used for cross-league normalization)
         LEAGUE_COEFFICIENTS = {
-            "Manchester City": 1.0, "Arsenal": 1.0, "Liverpool": 1.0, # EPL Baseline
-            "Real Madrid": 0.98, "Barcelona": 0.96, # La Liga
-            "Bayern Munich": 0.95, "Bayer Leverkusen": 0.94, # Bundesliga
-            "Inter": 0.94, "Juventus": 0.93, # Serie A
-            "Paris Saint Germain": 0.90, # Ligue 1
-            "Zenit St. Petersburg": 0.78 # RFPL
+            "Manchester City": 1.0, "Arsenal": 1.0, "Liverpool": 1.0,
+            "Real Madrid": 0.98, "Barcelona": 0.96,
+            "Bayern Munich": 0.95, "Bayer Leverkusen": 0.94,
+            "Inter": 0.94, "Juventus": 0.93,
+            "Paris Saint Germain": 0.90, "Zenit St. Petersburg": 0.78
         }
-        # Dynamic fallback based on typical league averages
-        coeff = LEAGUE_COEFFICIENTS.get(team, 0.85) 
         
-        # UCL Heritage & Economic Overrides
-        pedigree = UCL_PEDIGREE.get(team, 1.0)
-        squad_val = SQUAD_VALUE_INDEX.get(team, 1.0)
+        # UCL Heritage & Economic Overrides (Reset to 1.0 for domestic leagues to avoid inflation)
+        if is_ucl:
+            coeff = LEAGUE_COEFFICIENTS.get(team, 0.85) 
+            pedigree = UCL_PEDIGREE.get(team, 1.0)
+            squad_val = SQUAD_VALUE_INDEX.get(team, 1.0)
+        else:
+            coeff = 1.0  # Normalize for domestic matches
+            pedigree = 1.0
+            squad_val = 1.0
         
         if team_matches.empty:
             atk_strength, def_strength = 1.0, 1.0
@@ -598,20 +694,24 @@ class MatchPredictor:
         # 2. Add League Context & Elite Status
         if league_table and team in league_table:
             stats = league_table[team]
-            # General Team Ranking Effect
-            rank_boost = max(0.9, 1.1 - (stats['rank'] / 20 * 0.2)) 
+            # Standard Domestic Scaling (Toned down to avoid 0-5 scorelines)
+            rank_boost = max(0.95, 1.05 - (stats['rank'] / 20 * 0.1)) 
             atk_strength *= rank_boost
             
             if stats['rank'] <= 4:
-                atk_strength *= 1.05 
+                atk_strength *= 1.03 
             
             # Current Form / Domestic Dominance
             if is_home and stats['h_gp'] > 0:
                 h_ppg = stats['h_pts'] / stats['h_gp']
-                if h_ppg > 2.0: atk_strength *= 1.1
+                if h_ppg > 2.0: atk_strength *= 1.05
             elif not is_home and stats['a_gp'] > 0:
                 a_ppg = stats['a_pts'] / stats['a_gp']
                 if a_ppg > 1.8: atk_strength *= 1.05
+        
+        # Professional Normalization Cap: Keep strengths within realistic bounds
+        atk_strength = max(0.6, min(atk_strength, 1.7))
+        def_strength = max(0.6, min(def_strength, 1.7))
                 
         return atk_strength, def_strength, pedigree, squad_val
 
@@ -637,14 +737,14 @@ class MatchPredictor:
             "recent": h2h.to_dict('records')
         }
 
-    def predict_match(self, home_team, away_team, df):
+    def predict_match(self, home_team, away_team, df, is_ucl=False):
         """Runs Advanced Analytical Pipeline: Dixon-Coles Correction + Monte Carlo."""
         avg_h_xg, avg_a_xg = self.get_league_stats(df)
         league_table = self.get_league_table(df)
         elo = self.calculate_elo(df)
 
-        h_atk, h_def, h_ped, h_val = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg, league_table, elo)
-        a_atk, a_def, a_ped, a_val = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg, league_table, elo)
+        h_atk, h_def, h_ped, h_val = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
+        a_atk, a_def, a_ped, a_val = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
 
         l_home = h_atk * a_def * avg_h_xg * 1.08  # Enhanced HFA
         l_away = a_atk * h_def * avg_a_xg * 0.92
@@ -691,7 +791,8 @@ class MatchPredictor:
             "under35": np.sum([h_pmf[i]*a_pmf[j] for i in range(4) for j in range(4-i)]),
             "predicted_score": f"{np.unravel_index(matrix.argmax(), matrix.shape)[0]}-{np.unravel_index(matrix.argmax(), matrix.shape)[1]}",
             "elo_h": elo.get(home_team, 1500), "elo_a": elo.get(away_team, 1500),
-            "h2h": h2h, "ped_h": h_ped, "ped_a": a_ped, "val_h": h_val, "val_a": a_val
+            "h2h": h2h, "ped_h": h_ped, "ped_a": a_ped, "val_h": h_val, "val_a": a_val,
+            "is_ucl": is_ucl
         }
 
     def get_recommendations(self, res, live_odds=None):
@@ -730,7 +831,7 @@ class MatchPredictor:
 
         # 3. Secondary Pick (Value Finder)
         if edge_data:
-            secondary_pick = f"VALUE: {edge_data['market']}"
+            secondary_pick = f"{edge_data['market']}"
             secondary_insight = f"Model identifies a {edge_data['value']:.1%} edge over bookmaker odds. High value detected."
         elif res['over25'] > 0.65:
             secondary_pick = "Over 2.5 Goals"
@@ -756,31 +857,31 @@ def render_match_header(res, match_date):
     """Renders the FotMob-inspired match header with team logos and Elo Momentum."""
     logo_h = DataService.fetch_team_logo(res['home'])
     logo_a = DataService.fetch_team_logo(res['away'])
-    img_h = f"<img src='{logo_h}' style='height: 80px;'>" if logo_h else ""
-    img_a = f"<img src='{logo_a}' style='height: 80px;'>" if logo_a else ""
+    img_h = f"<img src='{logo_h}' style='height: 80px;' loading='lazy'>" if logo_h else ""
+    img_a = f"<img src='{logo_a}' style='height: 80px;' loading='lazy'>" if logo_a else ""
 
     st.markdown(f"""
-    <div style="display: flex; align-items: center; justify-content: center; gap: 40px; margin-bottom: 20px;">
-        <div style="text-align: center; flex: 1;">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;">
+        <div style="text-align: center; flex: 1; min-width: 120px;">
             {img_h}
-            <div style="font-weight: 800; font-size: 1.4rem; margin-top: 10px;">{res['home']}</div>
+            <div style="font-weight: 800; font-size: 1.2rem; margin-top: 10px;">{res['home']}</div>
             <div style="display: flex; justify-content: center; gap: 5px; margin-top: 4px;">
-                <div style="font-size: 0.7rem; color: #10b981; font-weight: 800; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px;">ELO: {int(res['elo_h'])}</div>
-                {f'<div style="font-size: 0.7rem; color: #3b82f6; font-weight: 800; background: rgba(59,130,246,0.1); padding: 2px 6px; border-radius: 4px;">UCL DNA</div>' if res.get('ped_h', 1)>1.05 else ''}
+                <div style="font-size: 0.65rem; color: #10b981; font-weight: 800; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px;">ELO: {int(res['elo_h'])}</div>
+                {f'<div style="font-size: 0.65rem; color: #3b82f6; font-weight: 800; background: rgba(59,130,246,0.1); padding: 2px 6px; border-radius: 4px;">UCL DNA</div>' if (res.get('is_ucl') and res.get('ped_h', 1)>1.05) else ''}
             </div>
         </div>
         <div style="text-align: center;">
-            <div style="font-size: 1.2rem; font-weight: 300; color: #94a3b8;">VS</div>
-            <div style="font-size: 0.9rem; font-weight: 600; background: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 20px; margin-top: 5px;">
+            <div style="font-size: 1rem; font-weight: 300; color: #94a3b8;">VS</div>
+            <div style="font-size: 0.8rem; font-weight: 600; background: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 20px; margin-top: 5px;">
                 {match_date.strftime('%H:%M')}
             </div>
         </div>
-        <div style="text-align: center; flex: 1;">
+        <div style="text-align: center; flex: 1; min-width: 120px;">
             {img_a}
-            <div style="font-weight: 800; font-size: 1.4rem; margin-top: 10px;">{res['away']}</div>
+            <div style="font-weight: 800; font-size: 1.2rem; margin-top: 10px;">{res['away']}</div>
             <div style="display: flex; justify-content: center; gap: 5px; margin-top: 4px;">
-                <div style="font-size: 0.7rem; color: #10b981; font-weight: 800; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px;">ELO: {int(res['elo_a'])}</div>
-                {f'<div style="font-size: 0.7rem; color: #3b82f6; font-weight: 800; background: rgba(59,130,246,0.1); padding: 2px 6px; border-radius: 4px;">UCL DNA</div>' if res.get('ped_a', 1)>1.05 else ''}
+                <div style="font-size: 0.65rem; color: #10b981; font-weight: 800; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px;">ELO: {int(res['elo_a'])}</div>
+                {f'<div style="font-size: 0.65rem; color: #3b82f6; font-weight: 800; background: rgba(59,130,246,0.1); padding: 2px 6px; border-radius: 4px;">UCL DNA</div>' if (res.get('is_ucl') and res.get('ped_a', 1)>1.05) else ''}
             </div>
         </div>
     </div>
@@ -878,6 +979,28 @@ def render_analytics(res):
         st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # 4. AI Tactical Game Script
+        st.markdown('<div style="font-size: 0.8rem; text-transform: uppercase; color: #94a3b8; font-weight: 800; margin-top: 20px;">AI Tactical Game Script</div>', unsafe_allow_html=True)
+        ped_h, ped_a = res.get('ped_h', 1.0), res.get('ped_a', 1.0)
+        
+        script = ""
+        # Heritage script ONLY for UCL matches (User Feedback Fix)
+        heritage = ""
+        if res.get('is_ucl'):
+            if ped_h > 1.05 and ped_a <= 1.0:
+                heritage = f"The immense European pedigree of {res['home']} will be a decisive factor tonight."
+            elif ped_a > 1.05 and ped_h <= 1.0:
+                heritage = f"{res['away']} brings their 'Champions League DNA' to this fixture."
+
+        if res['l_home'] > res['l_away'] + 1.0:
+            flow = f"Total dominance predicted for {res['home']}."
+        elif abs(res['l_home'] - res['l_away']) < 0.3:
+            flow = "A tactical stalemate is brewing. Expect a midfield battle."
+        else:
+            flow = f"A controlled tactical performance likely. {res['home']} holds the advantage."
+            
+        st.markdown(f'<div class="script-box">"{heritage} {flow}"</div>', unsafe_allow_html=True)
         st.caption(f"⚡ Dixon-Coles Correction + 10,000 Monte Carlo Simulations applied.")
 
 def render_advanced_intelligence(res, df):
@@ -953,12 +1076,14 @@ def render_advanced_intelligence(res, df):
         
         script = ""
         # UCL Heritage logic
-        if ped_h > 1.05 and ped_a <= 1.0:
-            heritage_context = f"The immense European pedigree of {res['home']} will be a decisive factor tonight. History tends to repeat itself on these nights."
-        elif ped_a > 1.05 and ped_h <= 1.0:
-            heritage_context = f"{res['away']} brings their 'Champions League DNA' to this fixture, which often overcomes domestic form disparities."
-        elif ped_h > 1.05 and ped_a > 1.05:
-            heritage_context = "Two European giants collide. This is a clash of legacies where the weight of history is balanced between both sides."
+        if res.get('is_ucl'):
+            if ped_h > 1.05 and ped_a <= 1.0:
+                heritage_context = f"The immense European pedigree of {res['home']} will be a decisive factor tonight. History tends to repeat itself on these nights."
+            elif ped_a > 1.05 and ped_h <= 1.0:
+                heritage_context = f"{res['away']} brings their 'Champions League DNA' to this fixture, which often overcomes domestic form disparities."
+            elif ped_h > 1.05 and ped_a > 1.05:
+                heritage_context = "Two European giants collide. This is a clash of legacies where the weight of history is balanced between both sides."
+            else: heritage_context = ""
         else: heritage_context = ""
 
         # Score & Flow logic
@@ -984,7 +1109,7 @@ def render_match_results(res, match_date, live_odds=None, df=None):
     render_match_header(res, match_date)
     st.markdown(f"""
     <div class="predicted-score-box">
-        <div style="font-size: 0.8rem; text-transform: uppercase; color: #10b981; letter-spacing: 0.1em; font-weight: 800;">Dixon-Coles Score</div>
+        <div style="font-size: 0.8rem; text-transform: uppercase; color: #10b981; letter-spacing: 0.1em; font-weight: 800;">PREDICTED SCORE</div>
         <div style="font-size: 2.3rem; font-weight: 800; color: var(--app-text);">{res['predicted_score']}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -992,48 +1117,31 @@ def render_match_results(res, match_date, live_odds=None, df=None):
     render_outcome_bar(res)
     render_top_picks(recs)
     render_analytics(res)
-    
-    # New Advanced Section
-    if df is not None:
-        render_advanced_intelligence(res, df)
 
 # ==============================================================================
-# UI COMPONENTS (LANDING & DISCOVERY)
+# UI COMPONENTS (MASTER NAVIGATION)
 # ==============================================================================
-def render_league_selector():
-    """Renders the high-tech immersive league selection grid."""
-    st.markdown("""
-    <div style="text-align: center; margin-top: 20px; margin-bottom: 40px;">
-        <h1 style="font-size: 3.5rem; font-weight: 800; margin-bottom: 10px;">MATCH INTELLIGENCE</h1>
-        <p style="font-size: 1.1rem; color: #94a3b8; letter-spacing: 0.2em;">SELECT YOUR THEATER OF OPERATION</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    leagues = [
-        ("Champions League", "🏆", "Elite European Nights"),
-        ("Premier League", "🦁", "World's Best League"),
-        ("La Liga", "🇪🇸", "The Home of Technicians"),
-        ("Serie A", "🇮🇹", "Tactical Masterclass"),
-        ("Bundesliga", "🇩🇪", "Pure Intensity"),
-        ("Ligue 1", "🇫🇷", "The Talent Factory"),
-        ("Russian Premier League", "🐻", "Northern Resistance")
+def render_tactical_tabs():
+    """Renders the horizontal Masterboard tabs at the top."""
+    tabs = [
+        ("Champions League", "🏆"), ("Premier League", "🦁"), ("La Liga", "🇪🇸"),
+        ("Serie A", "🇮🇹"), ("Bundesliga", "🇩🇪"), ("Ligue 1", "🇫🇷"), ("Russian Premier League", "🇷🇺")
     ]
     
-    cols = st.columns(3)
-    for i, (name, icon, tag) in enumerate(leagues):
-        with cols[i % 3]:
-            if st.button(name, key=f"btn_{name}", use_container_width=True):
+    # CSS injection for clicking tabs (simulated via streamlit buttons styled as tabs)
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+    cols = st.columns(len(tabs))
+    
+    for i, (name, icon) in enumerate(tabs):
+        is_active = st.session_state.selected_league == name
+        active_class = "tab-active" if is_active else ""
+        
+        with cols[i]:
+            if st.button(f"<span class='tab-icon'>{icon}</span> {name}", key=f"tab_{name}", use_container_width=True, unsafe_allow_html=True):
                 st.session_state.selected_league = name
                 st.rerun()
-            
-            # Use HTML overlay for the gamified look while button handles logic
-            st.markdown(f"""
-            <div class="league-card" style="pointer-events: none; margin-top: -45px; margin-bottom: 25px;">
-                <span class="league-card-icon">{icon}</span>
-                <div class="league-card-name">{name}</div>
-                <div class="league-card-tag">{tag}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ==============================================================================
 # MAIN APP FLOW
@@ -1041,68 +1149,89 @@ def render_league_selector():
 def main():
     inject_css()
     
-    # State Management for Navigation
+    # 1. Initialize State
     if 'selected_league' not in st.session_state:
-        st.session_state.selected_league = None
-    
-    if not st.session_state.selected_league:
-        render_league_selector()
-        return
+        st.session_state.selected_league = "Champions League"
+    if 'master_store' not in st.session_state:
+        st.session_state.master_store = {}
+    if 'season' not in st.session_state:
+        st.session_state.season = "2025"
 
-    # Sidebar (Simplified after selection)
-    st.sidebar.markdown(f"### 🏟️ {st.session_state.selected_league}")
-    if st.sidebar.button("◀ Return to Selector", use_container_width=True):
-        st.session_state.selected_league = None
+    # 2. Sidebar Navigation (Refined Management)
+    st.sidebar.markdown("""
+        <div style='text-align: center; padding: 20px; background: rgba(59,130,246,0.1); border-radius: 16px; margin-bottom: 25px; border: 1px solid rgba(59,130,246,0.2);'>
+            <div style='font-size: 2.5rem; margin-bottom: 10px;'>🧠</div>
+            <div style='font-weight: 800; font-size: 1.1rem; color: #60a5fa; letter-spacing: 0.05em;'>TACTICAL CORE</div>
+            <div style='font-size: 0.6rem; opacity: 0.8; letter-spacing: 0.2em; color: #10b981;'>SYSTEM: ONLINE</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    new_season = st.sidebar.selectbox("Active Season", ["2025", "2024"], index=0)
+    
+    if new_season != st.session_state.season:
+        st.session_state.season = new_season
+        st.session_state.master_store = {} # Force reload for new season
         st.rerun()
-        
-    st.sidebar.divider()
-    season = st.sidebar.selectbox("Season", ["2025", "2024", "2023"], index=0)
-    selected_league = st.session_state.selected_league
-    
-    # Rest of the App Logic (Same as before but using selected_league from state)
-    st.title(f"⚽ {selected_league}")
-    
-    is_ucl = selected_league == "Champions League"
-    df = pd.DataFrame()
-    
-    if is_ucl:
-        with st.spinner("Compiling global dataset for UCL..."):
-            master_dfs = []
-            for l_name, l_code in LEAGUES_UNDERSTAT.items():
-                if l_code != "UCL":
-                    d_df, _ = DataService.fetch_league_data(l_code, season)
-                    master_dfs.append(d_df)
-            df = pd.concat(master_dfs) if master_dfs else pd.DataFrame()
-            upcoming = DataService.fetch_ucl_fixtures(ODDS_API_KEY, LEAGUES_ODDS_API[selected_league])
-    else:
-        with st.spinner(f"Initiating {selected_league} Stream..."):
-            df, _ = DataService.fetch_league_data(LEAGUES_UNDERSTAT[selected_league], season)
-            upcoming = df[df['xG'].isna()].copy()
-        
-    if df.empty and not is_ucl:
-        st.error("Protocol Error: Could not fetch data stream."); st.stop()
 
-    if not upcoming.empty:
-        upcoming['DateTime'] = pd.to_datetime(upcoming['DateTime'])
-        upcoming = upcoming.sort_values('DateTime')
+    # 3. PRIORITY PRE-LOADING (Selected League First)
+    if st.session_state.selected_league not in st.session_state.master_store:
+        with st.spinner(f"� Priority Launch: {st.session_state.selected_league}..."):
+            name, data = DataService.preload_competition_context(st.session_state.selected_league, st.session_state.season)
+            st.session_state.master_store[name] = data
+            st.rerun()
+
+    # 4. BACKGROUND SYNC (Other Leagues in the background)
+    remaining = [l for l in LEAGUES_UNDERSTAT.keys() if l not in st.session_state.master_store]
+    if remaining:
+        with st.status("📡 Warming Up Other Theaters...", expanded=False) as status:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(remaining)) as executor:
+                futures = {executor.submit(DataService.preload_competition_context, l, st.session_state.season): l for l in remaining}
+                for future in concurrent.futures.as_completed(futures):
+                    name, data = future.result()
+                    st.session_state.master_store[name] = data
+            status.update(label="✅ All Tactical Feeds Synced!", state="complete", expanded=False)
+
+    # 4. Master Navigation Tabs
+    render_tactical_tabs()
+    
+    selected_league = st.session_state.selected_league
+    master_data = st.session_state.master_store.get(selected_league, {})
+    df = master_data.get("df", pd.DataFrame())
+    upcoming = master_data.get("upcoming", pd.DataFrame())
+    is_ucl = selected_league == "Champions League"
+
+    if df.empty and not is_ucl:
+        st.error(f"Analysis Failure: Could not synchronize {selected_league} data."); st.stop()
+
+    # 5. Dashboard Output
+    if upcoming.empty:
+        st.info(f"📡 No upcoming {selected_league} matches recorded. Check back soon for the next tactical window.")
+    else:
+        # Sort and clean fixtures
+        if 'DateTime' in upcoming.columns:
+            upcoming['DateTime'] = pd.to_datetime(upcoming['DateTime'])
+            upcoming = upcoming.sort_values('DateTime')
         
         options = [f"{r['Home']} vs {r['Away']} ({r['DateTime'].strftime('%Y-%m-%d %H:%M')})" for _, r in upcoming.iterrows()]
-        selection = st.selectbox("📅 Choose Active Target", ["Select a Match..."] + options)
+        selection = st.selectbox("📅 Select Tactical Target", ["Select a Match..."] + options)
         
         if selection != "Select a Match...":
             try:
                 match_str = selection.split(" (")[0]; home, away = match_str.split(" vs ")
                 home_norm = DataService.normalize_team_name(home)
                 away_norm = DataService.normalize_team_name(away)
+                
+                # Fetch live odds if needed (Dynamic fetching)
                 live_odds = DataService.fetch_live_odds(ODDS_API_KEY, LEAGUES_ODDS_API[selected_league], home, away)
                 
                 predictor = MatchPredictor()
-                res = predictor.predict_match(home_norm, away_norm, df)
+                res = predictor.predict_match(home_norm, away_norm, df, is_ucl)
                 match_date = upcoming[(upcoming['Home'] == home) & (upcoming['Away'] == away)].iloc[0]['DateTime']
                 
                 render_match_results(res, match_date, live_odds, df)
             except Exception as e:
-                st.error(f"Analysis Failure: {e}")
+                st.error(f"Intelligence Failure: {e}")
+                st.exception(e)
 
     st.markdown("<div style='height: 500px;'></div>", unsafe_allow_html=True)
 
