@@ -49,18 +49,7 @@ def render_top_picks(recs):
     cards_html = ""
     for key, grad, glow in types:
         data = recs[key]
-        cards_html += f"""
-        <div class="hero-card" style="background: var(--{grad}); border: 1px solid {glow}44; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-                <div style="font-size: 0.65rem; text-transform: uppercase; opacity: 0.8; font-weight: 800; letter-spacing: 0.05em;">{data['type']}</div>
-                <div style="font-size: 1.1rem; font-weight: 800; margin: 8px 0; line-height: 1.2;">{data['pick']}</div>
-            </div>
-            <div>
-                <div class="confidence-glow" style="width: {'90%' if key=='primary' else '75%' if key=='tactical' else '60%'}; background: {glow}; box-shadow: 0 0 10px {glow};"></div>
-                <div style="font-size: 0.8rem; font-style: italic; opacity: 0.9; margin-top: 8px;">"{data['insight']}"</div>
-            </div>
-        </div>
-        """
+        cards_html += f"""<div class="hero-card" style="background: var(--{grad}); border: 1px solid {glow}44; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;"><div><div style="font-size: 0.65rem; text-transform: uppercase; opacity: 0.8; font-weight: 800; letter-spacing: 0.05em;">{data['type']}</div><div style="font-size: 1.1rem; font-weight: 800; margin: 8px 0; line-height: 1.2;">{data['pick']}</div></div><div><div class="confidence-glow" style="width: {'90%' if key=='primary' else '75%' if key=='tactical' else '60%'}; background: {glow}; box-shadow: 0 0 10px {glow};"></div><div style="font-size: 0.8rem; font-style: italic; opacity: 0.9; margin-top: 8px;">"{data['insight']}"</div></div></div>"""
     
     st.markdown(f'<div class="picks-grid">{cards_html}</div>', unsafe_allow_html=True)
 
@@ -81,15 +70,7 @@ def render_analytics(res):
                 style = f"color: {color}; background: {color if is_active else 'var(--badge-bg)'};"
                 seg_html += f'<div class="potency-segment {active_class} {pulse_class}" style="{style}"></div>'
             
-            return f"""
-            <div class="potency-label-row">
-                <div class="potency-title">{team_name} Potency</div>
-                <div class="potency-value" style="color: {color};">{val:.2f} xG</div>
-            </div>
-            <div class="potency-gauge-container">
-                {seg_html}
-            </div>
-            """
+            return f'<div class="potency-label-row"><div class="potency-title">{team_name} Potency</div><div class="potency-value" style="color: {color};">{val:.2f} xG</div></div><div class="potency-gauge-container">{seg_html}</div>'
 
         h_color = "#10b981" if h_xg > 1.8 else "#f59e0b" if h_xg > 1.2 else "#60a5fa"
         a_color = "#10b981" if a_xg > 1.8 else "#f59e0b" if a_xg > 1.2 else "#f87171"
@@ -145,20 +126,7 @@ def render_advanced_intelligence(res, df):
         for label, h_val, a_val in metrics:
             h_pct = max(5, min(95, h_val * 100))
             a_pct = max(5, min(95, a_val * 100))
-            st.markdown(f"""
-            <div style="margin-bottom: 12px;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;">
-                    <span style="color: #60a5fa;">{res['home']}</span>
-                    <span>{label}</span>
-                    <span style="color: #f87171;">{res['away']}</span>
-                </div>
-                <div class="radar-bar-base">
-                    <div class="radar-bar-h" style="width: {h_pct}%;"></div>
-                    <div style="width: 2px; background: rgba(0,0,0,0.3);"></div>
-                    <div class="radar-bar-a" style="width: {a_pct}%;"></div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 12px;"><div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;"><span style="color: #60a5fa;">{res["home"]}</span><span>{label}</span><span style="color: #f87171;">{res["away"]}</span></div><div class="radar-bar-base"><div class="radar-bar-h" style="width: {h_pct}%;"></div><div style="width: 2px; background: rgba(0,0,0,0.3);"></div><div class="radar-bar-a" style="width: {a_pct}%;"></div></div></div>', unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -178,15 +146,9 @@ def render_advanced_intelligence(res, df):
             return dots
 
         with col1:
-            st.markdown(f"""
-            <div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 5px;">{res['home']} Momentum</div>
-            <div>{get_momentum_dots(res['home'], df)}</div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 5px;">{res["home"]} Momentum</div><div>{get_momentum_dots(res["home"], df)}</div>', unsafe_allow_html=True)
         with col2:
-            st.markdown(f"""
-            <div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 5px; text-align: right;">{res['away']} Momentum</div>
-            <div style="text-align: right;">{get_momentum_dots(res['away'], df)}</div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 5px; text-align: right;">{res["away"]} Momentum</div><div style="text-align: right;">{get_momentum_dots(res["away"], df)}</div>', unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -228,12 +190,7 @@ def render_match_results(res, match_date, df=None):
     recs = MatchPredictor().get_recommendations(res)
     
     render_match_header(res, match_date)
-    st.markdown(f"""
-    <div class="predicted-score-box">
-        <div style="font-size: 0.8rem; text-transform: uppercase; color: #10b981; letter-spacing: 0.1em; font-weight: 800;">PREDICTED SCORE</div>
-        <div style="font-size: 2.3rem; font-weight: 800; color: var(--app-text);">{res['predicted_score']}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="predicted-score-box"><div style="font-size: 0.8rem; text-transform: uppercase; color: #10b981; letter-spacing: 0.1em; font-weight: 800;">PREDICTED SCORE</div><div style="font-size: 2.3rem; font-weight: 800; color: var(--app-text);">{res["predicted_score"]}</div></div>', unsafe_allow_html=True)
 
     render_outcome_bar(res)
     render_top_picks(recs)
