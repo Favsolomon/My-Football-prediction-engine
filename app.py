@@ -33,24 +33,54 @@ LEAGUES_ODDS_API = {
 }
 
 # Advanced Glassmorphism CSS
+# Advanced Glassmorphism CSS (Dual-Mode Support)
 APP_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
     
+    :root {
+        /* Dark Mode (Default) */
+        --app-bg: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        --app-text: #f8fafc;
+        --app-subtext: #94a3b8;
+        --card-bg: rgba(255, 255, 255, 0.05);
+        --card-border: rgba(255, 255, 255, 0.1);
+        --card-shadow: rgba(0, 0, 0, 0.4);
+        --outcome-bg: rgba(255, 255, 255, 0.03);
+        --badge-bg: rgba(255, 255, 255, 0.1);
+        --score-bg: rgba(16, 185, 129, 0.1);
+        --score-border: rgba(16, 185, 129, 0.2);
+    }
+
+    @media (prefers-color-scheme: light) {
+        :root {
+            --app-bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            --app-text: #0f172a;
+            --app-subtext: #475569;
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --card-border: rgba(0, 0, 0, 0.05);
+            --card-shadow: rgba(0, 0, 0, 0.1);
+            --outcome-bg: rgba(0, 0, 0, 0.03);
+            --badge-bg: rgba(0, 0, 0, 0.05);
+            --score-bg: rgba(16, 185, 129, 0.05);
+            --score-border: rgba(16, 185, 129, 0.15);
+        }
+    }
+
     * { font-family: 'Outfit', sans-serif; }
     
-    .main { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #f8fafc; }
+    .main { background: var(--app-bg); color: var(--app-text); }
     
     /* Glassmorphism Card Style */
     .glass-card {
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--card-bg);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid var(--card-border);
         border-radius: 16px;
         padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        box-shadow: 0 8px 32px 0 var(--card-shadow);
     }
 
     /* Hero Card for Top Picks */
@@ -61,7 +91,7 @@ APP_CSS = """
         margin-bottom: 15px;
         position: relative;
         overflow: hidden;
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+        box-shadow: 0 10px 25px rgba(29, 78, 216, 0.3);
     }
     
     .hero-card::after {
@@ -79,7 +109,7 @@ APP_CSS = """
         height: 6px;
         background: #10b981;
         border-radius: 3px;
-        box-shadow: 0 0 10px #10b981;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
         margin: 10px 0;
     }
     
@@ -88,15 +118,15 @@ APP_CSS = """
         display: flex;
         justify-content: space-around;
         align-items: center;
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--outcome-bg);
         border-radius: 12px;
         padding: 10px;
         margin: 10px 0;
-        border: 1px solid rgba(255,255,255,0.05);
+        border: 1px solid var(--card-border);
     }
     
     .outcome-item { text-align: center; }
-    .outcome-value { font-size: 1.1rem; font-weight: 800; color: #f8fafc; }
+    .outcome-value { font-size: 1.1rem; font-weight: 800; color: var(--app-text); }
     
     .badge-circle {
         display: inline-block;
@@ -104,17 +134,18 @@ APP_CSS = """
         height: 32px;
         line-height: 32px;
         border-radius: 50%;
-        background: rgba(255,255,255,0.1);
+        background: var(--badge-bg);
         font-size: 0.8rem;
         font-weight: bold;
         margin-bottom: 4px;
+        color: var(--app-text);
     }
 
     /* Heat Meter */
     .heat-meter-container {
         width: 100%;
         height: 12px;
-        background: rgba(255,255,255,0.1);
+        background: var(--badge-bg);
         border-radius: 6px;
         overflow: hidden;
         margin: 8px 0;
@@ -131,13 +162,13 @@ APP_CSS = """
     .heat-high { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
 
     /* Typography fixes for Streamlit */
-    h1, h2, h3, h4, h5, h6, p, span, div { color: #f8fafc !important; }
-    .stCaption { color: #94a3b8 !important; font-style: italic; }
+    h1, h2, h3, h4, h5, h6, p, span, div { color: var(--app-text) !important; }
+    .stCaption { color: var(--app-subtext) !important; font-style: italic; }
     
     /* Predicted Score Box */
     .predicted-score-box {
-        background: rgba(16, 185, 129, 0.1);
-        border: 1px solid rgba(16, 185, 129, 0.2);
+        background: var(--score-bg);
+        border: 1px solid var(--score-border);
         border-radius: 12px;
         padding: 15px;
         text-align: center;
@@ -250,51 +281,108 @@ class MatchPredictor:
         avg_away_xg = played['xG.1'].mean()
         return avg_home_xg, avg_away_xg
 
-    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg):
-        """Calculates weighted offensive and defensive strength based on last 8 matches."""
+    def get_league_table(self, df):
+        """Generates a league table from matching history to calculate rankings and dominance."""
+        table = {}
+        played = df.dropna(subset=['Score'])
+        
+        for _, row in played.iterrows():
+            try:
+                h_score, a_score = map(int, row['Score'].split('-'))
+                h_team, a_team = row['Home'], row['Away']
+                
+                for team in [h_team, a_team]:
+                    if team not in table:
+                        table[team] = {'pts': 0, 'gp': 0, 'h_pts': 0, 'h_gp': 0, 'a_pts': 0, 'a_gp': 0}
+                
+                table[h_team]['gp'] += 1
+                table[a_team]['gp'] += 1
+                
+                if h_score > a_score:
+                    table[h_team]['pts'] += 3
+                    table[h_team]['h_pts'] += 3
+                    table[h_team]['h_gp'] += 1
+                    table[a_team]['a_gp'] += 1
+                elif h_score < a_score:
+                    table[a_team]['pts'] += 3
+                    table[a_team]['a_pts'] += 3
+                    table[a_team]['a_gp'] += 1
+                    table[h_team]['h_gp'] += 1
+                else:
+                    table[h_team]['pts'] += 1
+                    table[a_team]['pts'] += 1
+                    table[h_team]['h_pts'] += 1
+                    table[a_team]['a_pts'] += 1
+                    table[h_team]['h_gp'] += 1
+                    table[a_team]['a_gp'] += 1
+            except:
+                continue
+        
+        sorted_table = sorted(table.items(), key=lambda x: x[1]['pts'], reverse=True)
+        return {team: {'rank': i+1, **stats} for i, (team, stats) in enumerate(sorted_table)}
+
+    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg, league_table=None):
+        """Calculates strength using recent form, league context, and home/away dominance."""
         played = df.dropna(subset=['xG', 'xG.1'])
         team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(8)
         
+        # 1. Base strengths from recent form (xG)
         if team_matches.empty:
-            return 1.0, 1.0
-            
-        atk_xg = []
-        def_xg = []
-        
-        for _, row in team_matches.iterrows():
-            if row['Home'] == team:
-                atk_xg.append(row['xG'])
-                def_xg.append(row['xG.1'])
-            else:
-                atk_xg.append(row['xG.1'])
-                def_xg.append(row['xG'])
-                
-        weights = np.arange(1, len(atk_xg) + 1)
-        team_avg_atk = np.average(atk_xg, weights=weights)
-        team_avg_def = np.average(def_xg, weights=weights)
-        
-        # Strength relative to league
-        if is_home:
-            atk_strength = team_avg_atk / avg_home_xg
-            def_strength = team_avg_def / avg_away_xg
+            atk_strength, def_strength = 1.0, 1.0
         else:
-            atk_strength = team_avg_atk / avg_away_xg
-            def_strength = team_avg_def / avg_home_xg
+            atk_xg, def_xg = [], []
+            for _, row in team_matches.iterrows():
+                if row['Home'] == team:
+                    atk_xg.append(row['xG'])
+                    def_xg.append(row['xG.1'])
+                else:
+                    atk_xg.append(row['xG.1'])
+                    def_xg.append(row['xG'])
+                    
+            weights = np.arange(1, len(atk_xg) + 1)
+            team_avg_atk = np.average(atk_xg, weights=weights)
+            team_avg_def = np.average(def_xg, weights=weights)
             
+            if is_home:
+                atk_strength = team_avg_atk / avg_home_xg
+                def_strength = team_avg_def / avg_away_xg
+            else:
+                atk_strength = team_avg_atk / avg_away_xg
+                def_strength = team_avg_def / avg_home_xg
+
+        # 2. Add League Context & Elite Status
+        if league_table and team in league_table:
+            stats = league_table[team]
+            # Rank Factor (Top teams get a slight boost, bottom ones a slight penalty)
+            rank_boost = max(0.9, 1.1 - (stats['rank'] / 20 * 0.2)) 
+            atk_strength *= rank_boost
+            
+            # Elite Status (Top 4 teams contesting the league)
+            if stats['rank'] <= 4:
+                atk_strength *= 1.05 
+            
+            # Specialized Home/Away Dominance (Points per Game)
+            if is_home and stats['h_gp'] > 0:
+                h_ppg = stats['h_pts'] / stats['h_gp']
+                if h_ppg > 2.0: atk_strength *= 1.1  # Strong home advantage
+            elif not is_home and stats['a_gp'] > 0:
+                a_ppg = stats['a_pts'] / stats['a_gp']
+                if a_ppg > 1.8: atk_strength *= 1.05 # Strong away form
+                
         return atk_strength, def_strength
 
     def predict_match(self, home_team, away_team, df):
-        """Runs Poisson simulation to generate all market probabilities."""
+        """Runs Poisson simulation with enhanced team context."""
         avg_h_xg, avg_a_xg = self.get_league_stats(df)
+        league_table = self.get_league_table(df)
         
-        h_atk, h_def = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg)
-        a_atk, a_def = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg)
+        h_atk, h_def = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg, league_table)
+        a_atk, a_def = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg, league_table)
         
-        # Expected Goals = Team Attack * Opponent Defense * League Average
         l_home = h_atk * a_def * avg_h_xg
         l_away = a_atk * h_def * avg_a_xg
         
-        # Add Home Advantage boost (slight)
+        # Add Home Advantage base boost (elite teams get more via calculate_strength)
         l_home *= 1.05
         l_away *= 0.95
         
@@ -327,13 +415,9 @@ class MatchPredictor:
 
     def get_recommendations(self, res):
         """Applies the logic hierarchy to select primary and secondary picks."""
-        h_xg = res['l_home']
-        a_xg = res['l_away']
-        
-        primary_pick = None
-        secondary_pick = None
-        primary_insight = ""
-        secondary_insight = ""
+        h_xg, a_xg = res['l_home'], res['l_away']
+        primary_pick, secondary_pick = None, None
+        primary_insight, secondary_insight = "", ""
 
         # Rule 1: BTTS Override
         if a_xg > 2.15 and h_xg > 1.50:
@@ -363,16 +447,28 @@ class MatchPredictor:
             primary_pick = f"{res['home']} or {res['away']} Win"
             primary_insight = "Both teams are volatile and seek the win. A draw looks unlikely based on current form."
 
-        # Secondary Pick (Safety)
-        if "Over" not in primary_pick and res['over15'] > 0.75:
-            secondary_pick = "Over 1.5 Goals"
-            secondary_insight = "High probability of at least two goals. Both squads' recent trends support a scoring rhythm."
+        # Enhanced Secondary Pick Logic
+        if "Over" not in primary_pick:
+            if res['over15'] > 0.70:
+                secondary_pick = "Over 1.5 Goals"
+                secondary_insight = "Strong scoring trends for both sides suggest at least two goals."
+            elif res['under35'] > 0.75:
+                secondary_pick = "Under 3.5 Goals"
+                secondary_insight = "Expect a controlled game with focus on defense from both squads."
+        else:
+            if res['h_win'] > res['a_win'] and res['dc_1x'] > 0.75:
+                secondary_pick = "Home/Draw (1X)"
+                secondary_insight = f"{res['home']} holds the statistical edge to avoid defeat at home."
+            elif res['a_win'] > res['h_win'] and res['dc_x2'] > 0.75:
+                secondary_pick = "Away/Draw (X2)"
+                secondary_insight = f"{res['away']} tactical setup favors them securing a point away."
+            elif res['btts'] > 0.60:
+                secondary_pick = "BTTS (Yes)"
+                secondary_insight = "Recent conversion rates suggest both teams will find the back of the net."
 
         return {
-            "primary_pick": primary_pick,
-            "primary_insight": primary_insight,
-            "secondary_pick": secondary_pick,
-            "secondary_insight": secondary_insight
+            "primary_pick": primary_pick, "primary_insight": primary_insight,
+            "secondary_pick": secondary_pick, "secondary_insight": secondary_insight
         }
 
 # ==============================================================================
