@@ -37,9 +37,8 @@ def render_outcome_bar(res):
     st.markdown(bar_html, unsafe_allow_html=True)
 
 def render_top_picks(recs):
-    """Renders the High-Value Hero Cards in a 3-pillar layout."""
+    """Renders the High-Value Hero Cards in a responsive 3-pillar layout."""
     st.markdown("### 🏆 Tactical Insights")
-    cols = st.columns(3)
     
     types = [
         ('primary', 'hero-grad', '#60a5fa'),
@@ -47,21 +46,23 @@ def render_top_picks(recs):
         ('safety', 'safety-grad', '#94a3b8')
     ]
     
-    for i, (key, grad, glow) in enumerate(types):
+    cards_html = ""
+    for key, grad, glow in types:
         data = recs[key]
-        with cols[i]:
-            st.markdown(f"""
-            <div class="hero-card" style="background: var(--{grad}); border: 1px solid {glow}44; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
-                <div>
-                    <div style="font-size: 0.65rem; text-transform: uppercase; opacity: 0.8; font-weight: 800; letter-spacing: 0.05em;">{data['type']}</div>
-                    <div style="font-size: 1.1rem; font-weight: 800; margin: 8px 0; line-height: 1.2;">{data['pick']}</div>
-                </div>
-                <div>
-                    <div class="confidence-glow" style="width: {'90%' if key=='primary' else '75%' if key=='tactical' else '60%'}; background: {glow}; box-shadow: 0 0 10px {glow};"></div>
-                    <div style="font-size: 0.8rem; font-style: italic; opacity: 0.9; margin-top: 8px;">"{data['insight']}"</div>
-                </div>
+        cards_html += f"""
+        <div class="hero-card" style="background: var(--{grad}); border: 1px solid {glow}44; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+                <div style="font-size: 0.65rem; text-transform: uppercase; opacity: 0.8; font-weight: 800; letter-spacing: 0.05em;">{data['type']}</div>
+                <div style="font-size: 1.1rem; font-weight: 800; margin: 8px 0; line-height: 1.2;">{data['pick']}</div>
             </div>
-            """, unsafe_allow_html=True)
+            <div>
+                <div class="confidence-glow" style="width: {'90%' if key=='primary' else '75%' if key=='tactical' else '60%'}; background: {glow}; box-shadow: 0 0 10px {glow};"></div>
+                <div style="font-size: 0.8rem; font-style: italic; opacity: 0.9; margin-top: 8px;">"{data['insight']}"</div>
+            </div>
+        </div>
+        """
+    
+    st.markdown(f'<div class="picks-grid">{cards_html}</div>', unsafe_allow_html=True)
 
 def render_analytics(res):
     """Renders Goals, Simulation, and Tactical indicators."""
@@ -98,7 +99,7 @@ def render_analytics(res):
         st.markdown("<br>", unsafe_allow_html=True)
         
         # 3. Probabilities
-        st.markdown("<div style='display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center;'>", unsafe_allow_html=True)
+        st.markdown("<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 10px; text-align: center;'>", unsafe_allow_html=True)
         for label, prob in [("BTTS", res['btts']), ("OVER 2.5", res['over25']), ("UNDER 2.5", res['under25'])]:
             st.markdown(f"<div><div style='font-size:0.7rem; color:#94a3b8;'>{label}</div><div style='font-size:1.1rem; font-weight:800;'>{prob:.0%}</div></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -146,7 +147,7 @@ def render_advanced_intelligence(res, df):
             a_pct = max(5, min(95, a_val * 100))
             st.markdown(f"""
             <div style="margin-bottom: 12px;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;">
                     <span style="color: #60a5fa;">{res['home']}</span>
                     <span>{label}</span>
                     <span style="color: #f87171;">{res['away']}</span>
@@ -246,11 +247,8 @@ def render_tactical_tabs():
     ]
     
     st.markdown('<div class="tab-container">', unsafe_allow_html=True)
-    cols = st.columns(len(tabs))
-    
-    for i, (name, icon) in enumerate(tabs):
-        with cols[i]:
-            if st.button(f"{icon} {name}", key=f"tab_{name}", use_container_width=True):
-                st.session_state.selected_league = name
-                st.rerun()
+    for name, icon in tabs:
+        if st.button(f"{icon} {name}", key=f"tab_{name}"):
+            st.session_state.selected_league = name
+            st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)

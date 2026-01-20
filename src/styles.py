@@ -104,6 +104,8 @@ APP_CSS = """
         padding: 10px;
         margin: 10px 0;
         border: 1px solid var(--card-border);
+        flex-wrap: wrap;
+        gap: 10px;
     }
     
     .outcome-item { text-align: center; }
@@ -150,6 +152,7 @@ APP_CSS = """
     }
     .potency-segment {
         flex: 1;
+        min-width: 0;
         background: var(--badge-bg);
         border-radius: 2px;
         transition: all 0.3s ease;
@@ -182,6 +185,13 @@ APP_CSS = """
     .heat-high { background: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
     .heat-mid { background: #f59e0b; }
     .heat-low { background: #ef4444; }
+    
+    .picks-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
 
     /* High-Tech Tactical Visuals */
     .tactical-grid {
