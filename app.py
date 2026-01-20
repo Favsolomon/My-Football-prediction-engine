@@ -32,6 +32,120 @@ LEAGUES_ODDS_API = {
     "Russian Premier League": "soccer_russia_premier_league" 
 }
 
+# Advanced Glassmorphism CSS
+APP_CSS = """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+    
+    * { font-family: 'Outfit', sans-serif; }
+    
+    .main { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #f8fafc; }
+    
+    /* Glassmorphism Card Style */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    /* Hero Card for Top Picks */
+    .hero-card {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 15px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+    }
+    
+    .hero-card::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        pointer-events: none;
+    }
+
+    .confidence-glow {
+        height: 6px;
+        background: #10b981;
+        border-radius: 3px;
+        box-shadow: 0 0 10px #10b981;
+        margin: 10px 0;
+    }
+    
+    /* Match Outcome Horizontal Bar */
+    .outcome-bar {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .outcome-item { text-align: center; }
+    .outcome-value { font-size: 1.1rem; font-weight: 800; color: #f8fafc; }
+    
+    .badge-circle {
+        display: inline-block;
+        width: 32px;
+        height: 32px;
+        line-height: 32px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.1);
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-bottom: 4px;
+    }
+
+    /* Heat Meter */
+    .heat-meter-container {
+        width: 100%;
+        height: 12px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 8px 0;
+    }
+    
+    .heat-meter-fill {
+        height: 100%;
+        border-radius: 6px;
+        transition: width 0.5s ease-in-out;
+    }
+
+    .heat-low { background: #10b981; }
+    .heat-mid { background: #f59e0b; }
+    .heat-high { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+
+    /* Typography fixes for Streamlit */
+    h1, h2, h3, h4, h5, h6, p, span, div { color: #f8fafc !important; }
+    .stCaption { color: #94a3b8 !important; font-style: italic; }
+    
+    /* Predicted Score Box */
+    .predicted-score-box {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+        margin: 15px 0;
+    }
+</style>
+"""
+
 # ==============================================================================
 # DATA SERVICES
 # ==============================================================================
@@ -125,7 +239,10 @@ class DataService:
 # PREDICTION ENGINE
 # ==============================================================================
 class MatchPredictor:
+    """Core logic engine for computing probabilities and value recommendations."""
+
     def get_league_stats(self, df):
+        """Computes league average xG for home and away teams."""
         played = df.dropna(subset=['xG', 'xG.1'])
         if played.empty:
             return 1.3, 1.3  # Default baselines
@@ -134,6 +251,7 @@ class MatchPredictor:
         return avg_home_xg, avg_away_xg
 
     def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg):
+        """Calculates weighted offensive and defensive strength based on last 8 matches."""
         played = df.dropna(subset=['xG', 'xG.1'])
         team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(8)
         
@@ -166,6 +284,7 @@ class MatchPredictor:
         return atk_strength, def_strength
 
     def predict_match(self, home_team, away_team, df):
+        """Runs Poisson simulation to generate all market probabilities."""
         avg_h_xg, avg_a_xg = self.get_league_stats(df)
         
         h_atk, h_def = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg)
@@ -206,187 +325,216 @@ class MatchPredictor:
             "predicted_score": f"{np.unravel_index(matrix.argmax(), matrix.shape)[0]}-{np.unravel_index(matrix.argmax(), matrix.shape)[1]}"
         }
 
+    def get_recommendations(self, res):
+        """Applies the logic hierarchy to select primary and secondary picks."""
+        h_xg = res['l_home']
+        a_xg = res['l_away']
+        
+        primary_pick = None
+        secondary_pick = None
+        primary_insight = ""
+        secondary_insight = ""
+
+        # Rule 1: BTTS Override
+        if a_xg > 2.15 and h_xg > 1.50:
+            primary_pick = "BTTS (Yes)"
+            primary_insight = "Both teams show elite offensive data today. Expect net-bulging action from both ends."
+        
+        # Rule 2: Away Optimization
+        elif res['a_win'] > res['h_win'] and res['a_win'] > res['draw']:
+            if a_xg > 2.15:
+                primary_pick = f"{res['away']} Over 1.5 Goals"
+                primary_insight = f"{res['away']} attack is firing on all cylinders. They have too much firepower for the home defense."
+            else:
+                primary_pick = "Away/Draw (X2)"
+                primary_insight = f"{res['away']} holds the tactical edge here. This pick provides a vital safety net for a tight game."
+
+        # Rule 3: Home Optimization
+        elif res['h_win'] > res['a_win'] and res['h_win'] > res['draw']:
+            if h_xg > 2.49:
+                primary_pick = f"{res['home']} Over 1.5 Goals"
+                primary_insight = f"{res['home']} dominates the xG metrics at home. A multi-goal performance is statistically mapped."
+            else:
+                primary_pick = "Home/Draw (1X)"
+                primary_insight = f"Home advantage and defensive stability favor the hosts. Expect them to avoid defeat in this setup."
+                
+        # Fallback
+        if not primary_pick:
+            primary_pick = f"{res['home']} or {res['away']} Win"
+            primary_insight = "Both teams are volatile and seek the win. A draw looks unlikely based on current form."
+
+        # Secondary Pick (Safety)
+        if "Over" not in primary_pick and res['over15'] > 0.75:
+            secondary_pick = "Over 1.5 Goals"
+            secondary_insight = "High probability of at least two goals. Both squads' recent trends support a scoring rhythm."
+
+        return {
+            "primary_pick": primary_pick,
+            "primary_insight": primary_insight,
+            "secondary_pick": secondary_pick,
+            "secondary_insight": secondary_insight
+        }
+
 # ==============================================================================
 # UI COMPONENTS
 # ==============================================================================
 def inject_css():
-    st.markdown("""
-    <style>
-        .stMetric { background-color: #f0f2f6; padding: 10px; border-radius: 10px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .stMetric label { font-weight: 600; font-size: 0.9rem; }
-        .stMetric .css-1wivap2 { font-size: 1.5rem !important; }
-        .result-card { background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        [data-testid="stMetricValue"] { justify-content: center; }
-    </style>
-    """, unsafe_allow_html=True)
+    """Injects the global CSS theme."""
+    st.markdown(APP_CSS, unsafe_allow_html=True)
 
-def render_results(res, match_date, live_odds):
-    st.markdown("---")
-    
-    # 1. Header (Logos/Title) - Custom HTML for better mobile alignment
+def render_match_header(res, match_date):
+    """Renders the FotMob-inspired match header with team logos."""
     logo_h = DataService.fetch_team_logo(res['home'])
     logo_a = DataService.fetch_team_logo(res['away'])
-    
-    # Defaults if no logo found (optional, or just handle empty src)
-    img_h = f"<img src='{logo_h}' style='height: 60px; object-fit: contain;'>" if logo_h else ""
-    img_a = f"<img src='{logo_a}' style='height: 60px; object-fit: contain;'>" if logo_a else ""
-    
-    odds_badge = ""
-    if live_odds:
-        odds_badge = f"""<div style='margin-top: 5px; font-size: 0.8em; background: #fffbe6; padding: 2px 8px; border-radius: 10px; border: 1px solid #ffe58f; display: inline-block;'>1({live_odds.get('home', '-')}) X({live_odds.get('draw', '-')}) 2({live_odds.get('away', '-')})</div>"""
+    img_h = f"<img src='{logo_h}' style='height: 80px;'>" if logo_h else ""
+    img_a = f"<img src='{logo_a}' style='height: 80px;'>" if logo_a else ""
 
     st.markdown(f"""
-<div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-<div style="display: flex; align-items: center; justify-content: flex-end; flex: 1; gap: 10px;">
-<div style="text-align: right; font-weight: bold; font-size: 1.1rem;">{res['home']}</div>
-{img_h}
-</div>
-<div style="padding: 0 15px; text-align: center;">
-<div style="font-weight: bold; color: #444;">VS</div>
-<div style="font-size: 0.75em; color: gray;">{match_date.strftime('%H:%M')}</div>
-</div>
-<div style="display: flex; align-items: center; justify-content: flex-start; flex: 1; gap: 10px;">
-{img_a}
-<div style="text-align: left; font-weight: bold; font-size: 1.1rem;">{res['away']}</div>
-</div>
-</div>
-<div style="text-align: center; margin-bottom: 15px;">
-<span style="color: gray; font-size: 0.9em;">{match_date.strftime('%d %b %Y')}</span>
-{odds_badge}
-</div>
-""", unsafe_allow_html=True)
-
-    # 2. Recommendation Logic
-    all_bets = {
-        f"{res['home']} Win": res['h_win'], "Draw": res['draw'], f"{res['away']} Win": res['a_win'],
-        f"Home/Draw (1X)": res['dc_1x'], f"Away/Draw (X2)": res['dc_x2'], "Any Winner (12)": res['dc_12'],
-        "BTTS Yes": res['btts'], 
-        "Over 1.5 Goals": res['over15'], "Under 1.5 Goals": res['under15'],
-        "Over 2.5 Goals": res['over25'], "Under 2.5 Goals": res['under25'],
-        "Over 3.5 Goals": res['over35'], "Under 3.5 Goals": res['under35'],
-        f"{res['home']} Over 1.5 Goals": res['h_over15'], f"{res['away']} Over 1.5 Goals": res['a_over15']
-    }
-    
-    # Analysis Flags
-    diff_dc = abs(res['dc_1x'] - res['dc_x2'])
-    is_balanced = diff_dc < 0.10
-    
-    def get_sort_score(item):
-        name, prob = item
-        
-        # Get live odds for the primary outcomes if available
-        home_odds = live_odds.get('home', 0) if live_odds else 0
-        away_odds = live_odds.get('away', 0) if live_odds else 0
-        draw_odds = live_odds.get('draw', 0) if live_odds else 0
-
-        # A. Odds Filter & Favorite Prioritization
-        current = 0
-        is_favorite_market = False
-        if f"{res['home']} Win" == name: 
-            current = home_odds
-            is_favorite_market = prob > 0.55
-        elif f"{res['away']} Win" == name: 
-            current = away_odds
-            is_favorite_market = prob > 0.55
-        elif "Draw" == name: 
-            current = draw_odds
-        
-        # Boost strong favorites to #1 spot if confidence is high
-        if is_favorite_market and (current > 0 and current < 1.60):
-            return prob * 2.0  # Heavier weight for clear wins
-            
-        if current > 0 and current < 1.15: return prob * 0.3
-
-        # Double Chance Implicit Filtering
-        if "Home/Draw (1X)" == name and home_odds > 0 and home_odds < 1.15:
-            return prob * 0.3
-        if "Away/Draw (X2)" == name and away_odds > 0 and away_odds < 1.15:
-            return prob * 0.3
-            
-        # B. Balanced Penalty
-        if is_balanced and any(x in name for x in ["Win", "1X", "X2", "12"]):
-            return prob * 0.5
-            
-        # C. General Penalties
-        if "Over 2.5 Goals" in name: return prob * 1.1 # Favor goals slightly more
-        if "Under 3.5 Goals" in name: return prob * 1.2 # Favor safety goals
-        if "Over 1.5 Goals" == name: return prob * 0.70
-        if "Any Winner (12)" in name: return prob * 0.50 # Penalize 12 more
-        return prob
-
-    # Filter by 60% confidence threshold for Top Picks
-    top_eligible = {k: v for k, v in all_bets.items() if v >= 0.60}
-    if not top_eligible: # Fallback if none above 60%
-        top_eligible = all_bets
-        
-    sorted_bets = sorted(top_eligible.items(), key=get_sort_score, reverse=True)
-    raw_sorted = sorted(all_bets.items(), key=lambda x: x[1], reverse=True)
-    
-    # 3. Top Picks UI
-    st.success(f"### 🏆 Top Picks")
-    if is_balanced:
-        st.warning("⚠️ **Tight Match**: Teams are evenly matched. Focusing on Goal Markets.")
-        
-    c1, c2 = st.columns(2)
-    if sorted_bets:
-        c1.markdown(f"**🥇 1. {sorted_bets[0][0]}**")
-        c1.caption(f"Confidence: {sorted_bets[0][1]:.0%}")
-        if len(sorted_bets) > 1:
-            c2.markdown(f"**🥈 2. {sorted_bets[1][0]}**")
-            c2.caption(f"Confidence: {sorted_bets[1][1]:.0%}")
-    else:
-        st.write("No high-confidence picks found.")
-    
-    # Predicted Score
-    st.markdown(f"""
-    <div style="text-align: center; margin-top: 10px; padding: 10px; background-color: #e8f5e9; border-radius: 8px;">
-        <span style="font-size: 0.9rem; color: #2e7d32; font-weight: bold;">🎯 Predicted Score</span><br>
-        <span style="font-size: 1.8rem; font-weight: 800; color: #1b5e20;">{res['predicted_score']}</span>
+    <div style="display: flex; align-items: center; justify-content: center; gap: 40px; margin-bottom: 30px;">
+        <div style="text-align: center; flex: 1;">
+            {img_h}
+            <div style="font-weight: 800; font-size: 1.4rem; margin-top: 10px;">{res['home']}</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 1.2rem; font-weight: 300; color: #94a3b8;">VS</div>
+            <div style="font-size: 0.9rem; font-weight: 600; background: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 20px; margin-top: 5px;">
+                {match_date.strftime('%H:%M')}
+            </div>
+        </div>
+        <div style="text-align: center; flex: 1;">
+            {img_a}
+            <div style="font-weight: 800; font-size: 1.4rem; margin-top: 10px;">{res['away']}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
-    st.info(f"**📊 Statistically Most Likely:** {raw_sorted[0][0]} ({raw_sorted[0][1]:.1%})")
 
-    # 4. Detailed Stats
-    with st.container():
-        st.markdown(f"##### 📊 Match Outcomes")
-        c1, c2, c3 = st.columns(3)
-        c1.metric(f"{res['home']}", f"{res['h_win']:.0%}")
-        c2.metric("Draw", f"{res['draw']:.0%}")
-        c3.metric(f"{res['away']}", f"{res['a_win']:.0%}")
+def render_outcome_bar(res):
+    """Renders the de-emphasized H/D/A horizontal bar."""
+    st.markdown(f"""
+    <div class="outcome-bar">
+        <div class="outcome-item">
+            <div class="badge-circle" style="color: #60a5fa;">H</div>
+            <div class="outcome-value">{res['h_win']:.0%}</div>
+        </div>
+        <div class="outcome-item">
+            <div class="badge-circle" style="color: #94a3b8;">D</div>
+            <div class="outcome-value">{res['draw']:.0%}</div>
+        </div>
+        <div class="outcome-item">
+            <div class="badge-circle" style="color: #f87171;">A</div>
+            <div class="outcome-value">{res['a_win']:.0%}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_top_picks(recs):
+    """Renders the High-Value Hero Cards."""
+    st.markdown("### 🏆 High-Value Picks")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="hero-card">
+            <div style="font-size: 0.7rem; text-transform: uppercase; opacity: 0.8; font-weight: 800;">Primary Pick</div>
+            <div style="font-size: 1.3rem; font-weight: 800; margin: 8px 0;">{recs['primary_pick']}</div>
+            <div class="confidence-glow" style="width: 85%;"></div>
+            <div style="font-size: 0.85rem; font-style: italic; opacity: 0.9;">"{recs['primary_insight']}"</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if recs['secondary_pick']:
+        with col2:
+            st.markdown(f"""
+            <div class="hero-card" style="background: linear-gradient(135deg, #4b5563 0%, #1f2937 100%); box-shadow: none;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; opacity: 0.8; font-weight: 800;">Safety Pick</div>
+                <div style="font-size: 1.3rem; font-weight: 800; margin: 8px 0;">{recs['secondary_pick']}</div>
+                <div class="confidence-glow" style="width: 70%; background: #94a3b8; box-shadow: none;"></div>
+                <div style="font-size: 0.85rem; font-style: italic; opacity: 0.9;">"{recs['secondary_insight']}"</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+def render_analytics(res):
+    """Renders the Goals & Analytics section with Heat Meters."""
+    h_xg, a_xg = res['l_home'], res['l_away']
+    with st.expander("📈 Goals & Analytics (Heat Meters)", expanded=True):
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         
-        st.markdown(f"##### 🛡️ Safety (Double Chance)")
-        d1, d2, d3 = st.columns(3)
-        d1.metric("1X", f"{res['dc_1x']:.0%}")
-        d2.metric("12", f"{res['dc_12']:.0%}")
-        d3.metric("X2", f"{res['dc_x2']:.0%}")
+        # Heat Meter Classes
+        h_heat = "heat-high" if h_xg > 2.0 else "heat-mid" if h_xg > 1.2 else "heat-low"
+        a_heat = "heat-high" if a_xg > 2.0 else "heat-mid" if a_xg > 1.2 else "heat-low"
+        
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+            <span>{res['home']} Attack (xG)</span>
+            <span style="font-weight: 800;">{h_xg:.2f}</span>
+        </div>
+        <div class="heat-meter-container">
+            <div class="heat-meter-fill {h_heat}" style="width: {min(h_xg/3*100, 100)}%;"></div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin-top: 15px; margin-bottom: 5px;">
+            <span>{res['away']} Attack (xG)</span>
+            <span style="font-weight: 800;">{a_xg:.2f}</span>
+        </div>
+        <div class="heat-meter-container">
+            <div class="heat-meter-fill {a_heat}" style="width: {min(a_xg/3*100, 100)}%;"></div>
+        </div>
+        <br>
+        """, unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns(3)
+        for label, prob in [("BTTS", res['btts']), ("OVER 2.5", res['over25']), ("UNDER 2.5", res['under25'])]:
+            with c1 if label == "BTTS" else c2 if label == "OVER 2.5" else c3:
+                st.markdown(f"""
+                <div style='text-align:center;'>
+                    <div style='font-size:0.7rem; color:#94a3b8;'>{label}</div>
+                    <div style='font-size:1.2rem; font-weight:800;'>{prob:.0%}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with st.expander("📈 Goal Stats & Analysis", expanded=False):
-        g1, g2 = st.columns(2)
-        with g1:
-            st.write("Expected Goals (xG)")
-            st.progress(min(res['l_home']/3, 1.0), text=f"{res['home']}: {res['l_home']:.2f}")
-            st.progress(min(res['l_away']/3, 1.0), text=f"{res['away']}: {res['l_away']:.2f}")
-        with g2:
-            st.write("Market Probabilities")
-            st.write(f"• BTTS: **{res['btts']:.0%}**")
-            st.write(f"• Over/Under 1.5: **{res['over15']:.0%}** / **{res['under15']:.0%}**")
-            st.write(f"• Over/Under 2.5: **{res['over25']:.0%}** / **{res['under25']:.0%}**")
-            st.write(f"• Over/Under 3.5: **{res['over35']:.0%}** / **{res['under35']:.0%}**")
-        st.caption("Based on 10,000 simulations of Poisson distribution models.")
+def render_match_results(res, match_date):
+    """Orchestrates the rendering of all match analysis components."""
+    st.markdown("---")
+    
+    # Analyze recommendations
+    recs = MatchPredictor().get_recommendations(res)
+    
+    # 1. Header
+    render_match_header(res, match_date)
+
+    # 2. Predicted Score
+    st.markdown(f"""
+    <div class="predicted-score-box">
+        <div style="font-size: 0.8rem; text-transform: uppercase; color: #10b981; letter-spacing: 0.1em; font-weight: 800;">Predicted Score</div>
+        <div style="font-size: 2.5rem; font-weight: 800; color: #f8fafc;">{res['predicted_score']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 3. Probability Bar
+    render_outcome_bar(res)
+
+    # 4. Hero Picks
+    render_top_picks(recs)
+
+    # 5. Goal Analytics
+    render_analytics(res)
 
 # ==============================================================================
 # MAIN APP FLOW
 # ==============================================================================
 def main():
+    """Main entry point for the Streamlit application."""
     inject_css()
     st.title("⚽ Football Prediction Engine")
     
-    # Sidebar
+    # Sidebar Configuration
     st.sidebar.header("⚙️ Configuration")
     season = st.sidebar.selectbox("Season", ["2025", "2024", "2023"], index=0)
     selected_league = st.sidebar.selectbox("Select League", list(LEAGUES_UNDERSTAT.keys()))
     
-    # Fetch Data
+    # Data Retrieval
     with st.spinner(f"Fetching {selected_league}..."):
         df, teams = DataService.fetch_league_data(LEAGUES_UNDERSTAT[selected_league], season)
         
@@ -394,39 +542,35 @@ def main():
         st.error("Could not fetch data.")
         st.stop()
 
-    # Match Selection
+    # Match Selection Filter
     upcoming = df[df['xG'].isna()].copy()
     if not upcoming.empty:
         upcoming['DateTime'] = pd.to_datetime(upcoming['DateTime'])
         upcoming = upcoming.sort_values('DateTime')
-        choices = [
+        
+        match_options = [
             f"{r['Home']} vs {r['Away']} ({r['DateTime'].strftime('%Y-%m-%d %H:%M')})" 
             for _, r in upcoming.iterrows()
         ]
-        selection = st.selectbox("📅 Choose Upcoming Match", ["Select a Match..."] + choices)
+        selection = st.selectbox("📅 Choose Upcoming Match", ["Select a Match..."] + match_options)
         
         if selection != "Select a Match...":
             try:
-                # Parse Selection
+                # Analysis Pipeline
                 match_str = selection.split(" (")[0]
                 home, away = match_str.split(" vs ")
                 
-                # Analyze
                 predictor = MatchPredictor()
                 res = predictor.predict_match(home, away, df)
                 match_date = upcoming[(upcoming['Home'] == home) & (upcoming['Away'] == away)].iloc[0]['DateTime']
                 
-                # Get Odds
-                odds_key = LEAGUES_ODDS_API.get(selected_league)
-                live_odds = DataService.fetch_live_odds(ODDS_API_KEY, odds_key, home, away)
-                
-                # Render
-                render_results(res, match_date, live_odds)
+                # Render results
+                render_match_results(res, match_date)
                 
             except Exception as e:
                 st.error(f"Analysis Error: {e}")
 
-    # Mobile Fix
+    # Layout Spacing
     st.markdown("<div style='height: 500px;'></div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
