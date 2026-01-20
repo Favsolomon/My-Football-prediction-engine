@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Streamlit
+.streamlit/
+
+# Debug scripts
+debug_*.py
+test_*.py
+find_ucl_key.py
+inspect_team_data.py
+verify_ucl_fix.py
+
+# OS
+.DS_Store
+Thumbs.db
