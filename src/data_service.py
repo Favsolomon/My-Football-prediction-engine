@@ -157,6 +157,7 @@ class DataService:
                 master_dfs.extend(res)
                 
         return pd.concat(master_dfs) if master_dfs else pd.DataFrame()
+    @staticmethod
     def preload_competition_context(league_name, season="2025"):
         """Background loader worker for simultaneous league fetching (Data Only)."""
         is_ucl = league_name == "Champions League"
@@ -172,6 +173,3 @@ class DataService:
             upcoming = d_df[d_df['xg'].isna() if 'xg' in d_df.columns else d_df['xG'].isna()].copy()
 
         return league_name, {"df": df, "upcoming": upcoming, "status": status}
-
-        return league_name, {"df": df, "upcoming": upcoming, "status": status}
->>>>>>> 8653fc8fe62e8000365829e9680606a0fe4d9003
