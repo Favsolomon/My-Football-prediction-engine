@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # ⚽ Football Prediction Engine (Understat Integration)
 
 A powerful Streamlit web application that predicts football match outcomes using live Expected Goals (xG) data from **Understat.com**.
