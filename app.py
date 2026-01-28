@@ -1,12 +1,11 @@
-<<<<<<< HEAD
+
 import sys
 import os
 
 # Ensure the root directory is in the path for Streamlit Cloud
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-=======
->>>>>>> 8653fc8fe62e8000365829e9680606a0fe4d9003
+
 import streamlit as st
 import pandas as pd
 import concurrent.futures
