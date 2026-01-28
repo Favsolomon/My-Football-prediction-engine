@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # src/config.py
 import streamlit as st
 
