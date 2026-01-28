@@ -57,16 +57,6 @@ def main():
             st.session_state.master_store[name] = data
             st.rerun()
 
-    # Stealth Background Sync
-    remaining = [l for l in LEAGUES_UNDERSTAT.keys() if l not in st.session_state.master_store]
-    if remaining:
-        st.caption("🔄 Secondary Tactical Feeds Syncing in Background...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futures = {executor.submit(DataService.preload_competition_context, l, st.session_state.season): l for l in remaining}
-            for future in concurrent.futures.as_completed(futures):
-                name, data = future.result()
-                st.session_state.master_store[name] = data
-
     # 7. Analyze Selected Competition
     master_data = st.session_state.master_store.get(selected_league, {})
     df = master_data.get("df", pd.DataFrame())

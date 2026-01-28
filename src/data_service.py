@@ -141,23 +141,31 @@ class DataService:
         return None
 
     @staticmethod
+    @st.cache_data(ttl=3600)
     def parallel_ucl_fetch(season):
         """Ultra-fast parallel aggregator for UCL domestic data."""
         domestic_leagues = [c for c in LEAGUES_UNDERSTAT.values() if c != "UCL"]
         master_dfs = []
         
         def fetch_worker(code):
-            d, _ = DataService.fetch_league_data(code, season)
-            p, _ = DataService.fetch_league_data(code, str(int(season)-1))
-            return [d, p]
+            try:
+                d, _ = DataService.fetch_league_data(code, season)
+                # Only fetch previous season if current season has very little data (early season)
+                if len(d) < 50:
+                    p, _ = DataService.fetch_league_data(code, str(int(season)-1))
+                    return [d, p]
+                return [d]
+            except:
+                return []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(domestic_leagues)) as executor:
             results = list(executor.map(fetch_worker, domestic_leagues))
             for res in results:
                 master_dfs.extend(res)
                 
         return pd.concat(master_dfs) if master_dfs else pd.DataFrame()
     @staticmethod
+    @st.cache_data(ttl=1800)
     def preload_competition_context(league_name, season="2025"):
         """Background loader worker for simultaneous league fetching (Data Only)."""
         is_ucl = league_name == "Champions League"
