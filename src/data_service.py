@@ -68,29 +68,60 @@ class DataService:
         return mapping.get(name, name)
 
     @staticmethod
-    def fetch_ucl_fixtures(api_key, sport_key):
-        """Fetches UCL fixtures from Odds API to provide 'Upcoming' list with diagnostic logic."""
-        if not api_key: return pd.DataFrame(), "MISSING_KEY"
+    def fetch_free_ucl_fixtures():
+        """Senior Scraper: Extracts UCL fixtures with multi-month lookahead and robust parsing."""
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         
-        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={api_key}&regions=eu&markets=h2h"
-        try:
-            r = requests.get(url, timeout=5)
-            if r.status_code == 401:
-                return pd.DataFrame(), "QUOTA_EXCEEDED"
-            elif r.status_code != 200:
-                return pd.DataFrame(), f"API_ERROR_{r.status_code}"
+        # Check current month and Feb 2026 (next round)
+        urls = [
+            "https://www.skysports.com/champions-league-fixtures",
+            "https://www.skysports.com/champions-league-scores-fixtures/2026-02-01"
+        ]
+        
+        all_fixtures = []
+        import re
+        
+        for url in urls:
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+                if r.status_code != 200: continue
+                html = r.text
                 
-            data = r.json()
-            fixtures = []
-            for m in data:
-                fixtures.append({
-                    'Home': m['home_team'], 'Away': m['away_team'],
-                    'xG': np.nan, 'xG.1': np.nan, 'Score': None,
-                    'DateTime': m['commence_time']
-                })
-            return pd.DataFrame(fixtures), "OK"
-        except Exception as e: 
-            return pd.DataFrame(), "CONNECTION_ERROR"
+                # Split by date headers
+                date_blocks = re.split(r'class="fixres__header"', html)
+                for block in date_blocks[1:]:
+                    date_match = re.search(r'>(.*?)<', block)
+                    if not date_match: continue
+                    date_str = date_match.group(1).strip()
+                    
+                    # Split into individual match items
+                    items = re.split(r'class="fixres__item"', block)
+                    for item in items[1:]:
+                        # Robust team extraction (handles both swap-text and simple spans)
+                        teams = re.findall(r'class="swap-text--heavy">(.*?)</span>', item)
+                        if len(teams) < 2:
+                            # Fallback if swap-text is missing
+                            teams = re.findall(r'class="fixres__team--(?:home|away)".*?<span>(.*?)</span>', item, re.DOTALL)
+                        
+                        if len(teams) >= 2:
+                            home, away = teams[0].strip(), teams[1].strip()
+                            # Check if it's already finished (has a score)
+                            is_result = "fixres__score" in item
+                            
+                            if not is_result: # We only want upcoming fixtures
+                                all_fixtures.append({
+                                    'Home': home, 'Away': away,
+                                    'xG': np.nan, 'xG.1': np.nan, 'Score': None,
+                                    'DateTime': date_str
+                                })
+            except: continue
+            
+        df = pd.DataFrame(all_fixtures)
+        # Deduplicate and return
+        if not df.empty:
+            df = df.drop_duplicates(subset=['Home', 'Away'])
+            return df, "OK"
+        return pd.DataFrame(), "NO_UPCOMING_MATCHES"
 
     @staticmethod
     @ttl_cache(ttl=86400)
@@ -142,13 +173,14 @@ class DataService:
 
     @staticmethod
     @ttl_cache(ttl=3600)
-    def parallel_ucl_fetch(season):
-        """Ultra-fast parallel aggregator for UCL domestic data."""
-        domestic_leagues = [c for c in LEAGUES_UNDERSTAT.values() if c != "UCL"]
+    def parallel_ucl_fetch(season="2024"):
+        """Senior Aggregator: Builds a global team database across all 5 top leagues."""
+        domestic_codes = [c for c in LEAGUES_UNDERSTAT.values() if c != "UCL"]
         master_dfs = []
         
         def fetch_worker(code):
             try:
+<<<<<<< Updated upstream
                 d, _ = DataService.fetch_league_data(code, season)
                 # Only fetch previous season if current season has very little data (early season)
                 if len(d) < 50:
@@ -157,13 +189,28 @@ class DataService:
                 return [d]
             except:
                 return []
+=======
+                # Fetch 2 seasons to ensure team coverage and H2H data
+                s1, _ = DataService.fetch_league_data(code, season)
+                s2, _ = DataService.fetch_league_data(code, str(int(season)-1))
+                return [s1, s2]
+            except: return []
+>>>>>>> Stashed changes
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(domestic_leagues)) as executor:
-            results = list(executor.map(fetch_worker, domestic_leagues))
+        # Parallel fetch for speed
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(domestic_codes)) as executor:
+            results = list(executor.map(fetch_worker, domestic_codes))
             for res in results:
+<<<<<<< Updated upstream
                 master_dfs.extend(res)
                 
         return pd.concat(master_dfs) if master_dfs else pd.DataFrame()
+=======
+                if res: master_dfs.extend(res)
+        
+        if not master_dfs: return pd.DataFrame()
+        return pd.concat(master_dfs).sort_values('DateTime')
+>>>>>>> Stashed changes
     @staticmethod
     @ttl_cache(ttl=1800)
     def preload_competition_context(league_name, season="2025"):
@@ -173,8 +220,8 @@ class DataService:
         status = "OK"
         
         if is_ucl:
-            df = DataService.parallel_ucl_fetch(season)
-            upcoming, status = DataService.fetch_ucl_fixtures(ODDS_API_KEY, LEAGUES_ODDS_API[league_name])
+            df = DataService.parallel_ucl_fetch(season if int(season) < 2025 else "2024")
+            upcoming, status = DataService.fetch_free_ucl_fixtures()
         else:
             d_df, _ = DataService.fetch_league_data(league_code, season)
             df = d_df

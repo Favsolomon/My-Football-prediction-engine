@@ -42,6 +42,15 @@ SQUAD_VALUE_INDEX = {
     "Milan": 1.04, "Zenit St. Petersburg": 0.85, "Krasnodar": 0.75
 }
 
+# Senior Correction: League Quality Coefficients for Cross-Border Normalization
+LEAGUE_COEFFICIENTS = {
+    "Manchester City": 1.0, "Arsenal": 1.0, "Liverpool": 1.0,
+    "Real Madrid": 0.98, "Barcelona": 0.96,
+    "Bayern Munich": 0.95, "Bayer Leverkusen": 0.94,
+    "Inter": 0.94, "Juventus": 0.93,
+    "Paris Saint Germain": 0.90, "Zenit St. Petersburg": 0.78
+}
+
 
 
 
