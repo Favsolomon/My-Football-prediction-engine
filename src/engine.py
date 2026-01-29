@@ -117,17 +117,13 @@ class MatchPredictor:
         team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(5)
         clinical_idx = 1.0
         
-        # League Quality Coefficients
-        LEAGUE_COEFFICIENTS = {
-            "Manchester City": 1.0, "Arsenal": 1.0, "Liverpool": 1.0,
-            "Real Madrid": 0.98, "Barcelona": 0.96,
-            "Bayern Munich": 0.95, "Bayer Leverkusen": 0.94,
-            "Inter": 0.94, "Juventus": 0.93,
-            "Paris Saint Germain": 0.90, "Zenit St. Petersburg": 0.78
-        }
-        
         if is_ucl:
-            coeff = LEAGUE_COEFFICIENTS.get(team, 0.85) 
+            coeff = getattr(self, 'LEAGUE_COEFFICIENTS', {}).get(team, 0.85) 
+            if not coeff or coeff == 0.85:
+                # Fallback to importing from config if not on self (Senior failsafe)
+                from .config import LEAGUE_COEFFICIENTS
+                coeff = LEAGUE_COEFFICIENTS.get(team, 0.85)
+            
             pedigree = UCL_PEDIGREE.get(team, 1.0)
             squad_val = SQUAD_VALUE_INDEX.get(team, 1.0)
         else:
