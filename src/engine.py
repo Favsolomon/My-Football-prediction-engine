@@ -115,6 +115,7 @@ class MatchPredictor:
         """Calculates strength using Elo-weighted xG and context-aware Multipliers."""
         played = df.dropna(subset=['xG', 'xG.1'])
         team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(5)
+        clinical_idx = 1.0
         
         # League Quality Coefficients
         LEAGUE_COEFFICIENTS = {
@@ -176,8 +177,6 @@ class MatchPredictor:
                 # smoothed impact: 25% of the deviation from 1.0, capped at +/- 8%
                 clinical_idx = 1.0 + (eff - 1.0) * 0.25
                 clinical_idx = max(0.92, min(clinical_idx, 1.08))
-                
-                atk_strength *= clinical_idx
             
             if is_home:
                 atk_strength = (team_avg_atk / avg_home_xg) * coeff
@@ -185,7 +184,8 @@ class MatchPredictor:
             else:
                 atk_strength = (team_avg_atk / avg_away_xg) * coeff
                 def_strength = (team_avg_def / avg_home_xg) * (2.0 - coeff)
-
+            
+            atk_strength *= clinical_idx
             atk_strength *= (pedigree * squad_val)
             def_strength /= (pedigree * squad_val)
 
