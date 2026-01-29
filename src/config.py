@@ -1,6 +1,6 @@
 
 # src/config.py
-import streamlit as st
+
 
 # API Keys
 ODDS_API_KEY = "a136f290325a43885ca0bccc99576edb"
@@ -42,11 +42,6 @@ SQUAD_VALUE_INDEX = {
     "Milan": 1.04, "Zenit St. Petersburg": 0.85, "Krasnodar": 0.75
 }
 
-def init_page():
-    st.set_page_config(
-        page_title="Match Predictor PRO",
-        layout="wide",
-        initial_sidebar_state="collapsed"
-    )
+
 
 

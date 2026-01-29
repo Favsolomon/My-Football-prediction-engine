@@ -3,14 +3,14 @@
 import pandas as pd
 import numpy as np
 import requests
-import streamlit as st
+from cachetools.func import ttl_cache
 import concurrent.futures
 from understatapi import UnderstatClient
 from .config import ODDS_API_KEY, LEAGUES_UNDERSTAT, LEAGUES_ODDS_API
 
 class DataService:
     @staticmethod
-    @st.cache_data(ttl=3600)
+    @ttl_cache(ttl=3600)
     def fetch_league_data(league_code, season="2025"):
         """Fetches and cleans league data from Understat."""
         if league_code == "UCL":
@@ -49,7 +49,7 @@ class DataService:
             df['xG.1'] = pd.to_numeric(df['xG.1'], errors='coerce')
             return df, sorted(list(teams))
         except Exception as e:
-            st.error(f"Error fetching data: {e}")
+            print(f"Error fetching data: {e}")
             return pd.DataFrame(), []
 
     @staticmethod
@@ -93,7 +93,7 @@ class DataService:
             return pd.DataFrame(), "CONNECTION_ERROR"
 
     @staticmethod
-    @st.cache_data(ttl=86400)
+    @ttl_cache(ttl=86400)
     def fetch_team_logo(team_name):
         """Fetches team logo URL with strict timeout and fallback."""
         try:
@@ -108,7 +108,7 @@ class DataService:
         return None
 
     @staticmethod
-    @st.cache_data(ttl=300)
+    @ttl_cache(ttl=300)
     def fetch_live_odds(api_key, sport_key, home_team, away_team):
         """Fetches live H2H and Totals odds from The-Odds-API for model biasing."""
         if not api_key: return None
@@ -141,7 +141,7 @@ class DataService:
         return None
 
     @staticmethod
-    @st.cache_data(ttl=3600)
+    @ttl_cache(ttl=3600)
     def parallel_ucl_fetch(season):
         """Ultra-fast parallel aggregator for UCL domestic data."""
         domestic_leagues = [c for c in LEAGUES_UNDERSTAT.values() if c != "UCL"]
@@ -165,7 +165,7 @@ class DataService:
                 
         return pd.concat(master_dfs) if master_dfs else pd.DataFrame()
     @staticmethod
-    @st.cache_data(ttl=1800)
+    @ttl_cache(ttl=1800)
     def preload_competition_context(league_name, season="2025"):
         """Background loader worker for simultaneous league fetching (Data Only)."""
         is_ucl = league_name == "Champions League"
