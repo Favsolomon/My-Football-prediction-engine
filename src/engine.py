@@ -330,7 +330,7 @@ class MatchPredictor:
             primary_pick = "Away/Draw (X2)"
             primary_insight = "The away team is strong enough to at least get a draw here."
 
-        # 2. Tactical Margin (The 'Risky but Probable' Growth Pick)
+        # 2. Risky Value Pick (The 'High Growth' Analytical Choice)
         # Focuses on 55-68% range outcomes that aren't the primary
         tactical_pick = None
         tactical_insight = ""
@@ -350,7 +350,7 @@ class MatchPredictor:
         else:
             # Fallback for Tactical
             tactical_pick = "Over 2.5 Goals" if res['over25'] > 0.45 else "Under 3.5 Goals"
-            tactical_insight = "A tactical decision based on recent defensive patterns."
+            tactical_insight = "A high-risk analytical choice based on recent variance patterns."
 
         # 3. Safety Pick (The High Probability Conservative Choice)
         # Focuses on >70% probability locks
@@ -366,7 +366,7 @@ class MatchPredictor:
 
         return {
             "primary": {"pick": primary_pick, "insight": primary_insight, "type": "Primary Pick"},
-            "tactical": {"pick": tactical_pick, "insight": tactical_insight, "type": "Tactical Margin"},
+            "tactical": {"pick": tactical_pick, "insight": tactical_insight, "type": "Risky Value Pick"},
             "safety": {"pick": safety_pick, "insight": safety_insight, "type": "Safety Pick"}
         }
 

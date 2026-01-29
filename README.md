@@ -10,7 +10,7 @@ A powerful web application that predicts football match outcomes using live Expe
 - **Smart Prediction**: 
   - Uses Poisson distribution and Monte Carlo simulations to calculate Win/Draw/Loss probabilities.
   - **UCL DNA**: Proprietary weighting for European heritage in Champions League fixtures.
-  - **Tactical Insights**: Provides three levels of picks (Primary, Tactical Margin, and Safety Picks).
+  - **Tactical Insights**: Provides three levels of picks (Primary, Risky Value, and Safety Picks).
 - **Match Intelligence**: Advanced indicators like economic multipliers and momentum pulse.
 
 ## How to Run Locally

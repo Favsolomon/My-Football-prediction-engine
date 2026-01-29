@@ -20,11 +20,12 @@ class DataService:
             with UnderstatClient() as client:
                 matches = client.league(league=league_code).get_match_data(season=season)
             
-            if not matches:
-                return pd.DataFrame(), []
-
             processed_data = []
             teams = set()
+            cols = ['Home', 'Away', 'xG', 'xG.1', 'Score', 'DateTime']
+            
+            if not matches:
+                return pd.DataFrame(columns=cols), []
             
             for m in matches:
                 if not m.get('isResult'):
@@ -50,7 +51,8 @@ class DataService:
             return df, sorted(list(teams))
         except Exception as e:
             print(f"Error fetching data: {e}")
-            return pd.DataFrame(), []
+            cols = ['Home', 'Away', 'xG', 'xG.1', 'Score', 'DateTime']
+            return pd.DataFrame(columns=cols), []
 
     @staticmethod
     def normalize_team_name(name):
@@ -178,6 +180,9 @@ class DataService:
         else:
             d_df, _ = DataService.fetch_league_data(league_code, season)
             df = d_df
-            upcoming = d_df[d_df['xg'].isna() if 'xg' in d_df.columns else d_df['xG'].isna()].copy()
+            if not d_df.empty:
+                upcoming = d_df[d_df['xg'].isna() if 'xg' in d_df.columns else d_df['xG'].isna()].copy()
+            else:
+                upcoming = pd.DataFrame(columns=['Home', 'Away', 'xG', 'xG.1', 'Score', 'DateTime'])
 
         return league_name, {"df": df, "upcoming": upcoming, "status": status}

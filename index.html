@@ -244,8 +244,8 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-areas:
-                "primary tactical"
-                "safety tactical";
+                "primary risky"
+                "safety risky";
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -258,8 +258,8 @@
             grid-area: safety;
         }
 
-        .pick-tactical {
-            grid-area: tactical;
+        .pick-risky {
+            grid-area: risky;
         }
 
         @media (max-width: 600px) {
@@ -268,7 +268,7 @@
                 grid-template-areas:
                     "primary"
                     "safety"
-                    "tactical";
+                    "risky";
             }
         }
 
@@ -494,7 +494,7 @@
             const types = [
                 { key: 'primary', grad: 'var(--hero-grad)', class: 'pick-primary' },
                 { key: 'safety', grad: 'var(--safety-grad)', class: 'pick-safety' },
-                { key: 'tactical', grad: 'var(--value-grad)', class: 'pick-tactical' }
+                { key: 'tactical', grad: 'var(--value-grad)', class: 'pick-risky' }
             ];
 
             document.getElementById('picks-grid').innerHTML = types.map(t => {
