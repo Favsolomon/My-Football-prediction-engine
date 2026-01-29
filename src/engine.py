@@ -161,6 +161,24 @@ class MatchPredictor:
             team_avg_atk = np.average(atk_vals, weights=weight_array) if atk_vals else 0
             team_avg_def = np.average(def_vals, weights=weight_array) if def_vals else 1.0
             
+            # --- MOMENTUM FACTOR (Trajectory Analysis) ---
+            momentum_multiplier = 1.0
+            if len(atk_vals) >= 3:
+                try:
+                    # Calculate slope of offensive production (recent xG)
+                    x_axis = np.arange(len(atk_vals))
+                    slope, _ = np.polyfit(x_axis, atk_vals, 1)
+                    
+                    # Sigmoid-style smoothing for momentum
+                    if slope > 0.15: momentum_multiplier = 1.06   # Strong uptrend (Ascending)
+                    elif slope > 0.05: momentum_multiplier = 1.03  # Slight uptrend
+                    elif slope < -0.15: momentum_multiplier = 0.94 # Sharp decline (Collapsing)
+                    elif slope < -0.05: momentum_multiplier = 0.97 # Slight decline
+                    print(f"Momentum Analysis for {team}: Slope={slope:.4f}, Multiplier={momentum_multiplier:.2f}")
+                except Exception as e:
+                    print(f"Momentum Calculation Error for {team}: {e}")
+                    pass
+            
             # Clinical Factor (xG Conversion Efficiency)
             total_actual = 0
             total_expected = 0
@@ -177,6 +195,7 @@ class MatchPredictor:
                 # smoothed impact: 25% of the deviation from 1.0, capped at +/- 8%
                 clinical_idx = 1.0 + (eff - 1.0) * 0.25
                 clinical_idx = max(0.92, min(clinical_idx, 1.08))
+                print(f"Clinical Analysis for {team}: Eff={eff:.2f}, Multiplier={clinical_idx:.2f}")
             
             if is_home:
                 atk_strength = (team_avg_atk / avg_home_xg) * coeff
@@ -186,6 +205,7 @@ class MatchPredictor:
                 def_strength = (team_avg_def / avg_home_xg) * (2.0 - coeff)
             
             atk_strength *= clinical_idx
+            atk_strength *= momentum_multiplier
             atk_strength *= (pedigree * squad_val)
             def_strength /= (pedigree * squad_val)
 
