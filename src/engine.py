@@ -160,6 +160,25 @@ class MatchPredictor:
             team_avg_atk = np.average(atk_vals, weights=weight_array) if atk_vals else 0
             team_avg_def = np.average(def_vals, weights=weight_array) if def_vals else 1.0
             
+            # Clinical Factor (xG Conversion Efficiency)
+            total_actual = 0
+            total_expected = 0
+            for _, row in team_matches.iterrows():
+                if row['Score']:
+                    hs, ascore = map(int, row['Score'].split('-'))
+                    is_team_h = row['Home'] == team
+                    total_actual += hs if is_team_h else ascore
+                    total_expected += row['xG'] if is_team_h else row['xG.1']
+            
+            clinical_idx = 1.0
+            if total_expected > 0:
+                eff = total_actual / total_expected
+                # smoothed impact: 25% of the deviation from 1.0, capped at +/- 8%
+                clinical_idx = 1.0 + (eff - 1.0) * 0.25
+                clinical_idx = max(0.92, min(clinical_idx, 1.08))
+                
+                atk_strength *= clinical_idx
+            
             if is_home:
                 atk_strength = (team_avg_atk / avg_home_xg) * coeff
                 def_strength = (team_avg_def / avg_away_xg) * (2.0 - coeff)
@@ -195,7 +214,7 @@ class MatchPredictor:
         atk_strength = max(0.5, min(atk_strength, 1.8))
         def_strength = max(0.5, min(def_strength, 1.8))
                 
-        return atk_strength, def_strength, pedigree, squad_val
+        return atk_strength, def_strength, pedigree, squad_val, clinical_idx
 
     def get_h2h_history(self, home, away, df):
         """Analyzes Head-to-Head history for tactical trends."""
@@ -225,8 +244,8 @@ class MatchPredictor:
         league_table = self.get_league_table(df)
         elo = self.calculate_elo(df)
 
-        h_atk, h_def, h_ped, h_val = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
-        a_atk, a_def, a_ped, a_val = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
+        h_atk, h_def, h_ped, h_val, h_clin = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
+        a_atk, a_def, a_ped, a_val, a_clin = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
 
         l_home = h_atk * a_def * avg_h_xg * 1.08
         l_away = a_atk * h_def * avg_a_xg * 0.92
@@ -286,6 +305,7 @@ class MatchPredictor:
             "pts_h": league_table.get(home_team, {}).get('pts', 0),
             "pts_a": league_table.get(away_team, {}).get('pts', 0),
             "h2h": h2h, "ped_h": h_ped, "ped_a": a_ped, "val_h": h_val, "val_a": a_val,
+            "clin_h": h_clin, "clin_a": a_clin,
             "is_ucl": is_ucl
         }
 
