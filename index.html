@@ -242,15 +242,40 @@
         /* Picks Grid */
         .picks-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "primary tactical"
+                "safety tactical";
             gap: 20px;
             margin-bottom: 30px;
         }
 
+        .pick-primary {
+            grid-area: primary;
+        }
+
+        .pick-safety {
+            grid-area: safety;
+        }
+
+        .pick-tactical {
+            grid-area: tactical;
+        }
+
+        @media (max-width: 600px) {
+            .picks-grid {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "primary"
+                    "safety"
+                    "tactical";
+            }
+        }
+
         .pick-card {
-            padding: 20px;
+            padding: 15px;
             border-radius: 20px;
-            min-height: 180px;
+            min-height: 120px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -452,15 +477,15 @@
 
             // Picks
             const types = [
-                { key: 'primary', grad: 'var(--hero-grad)' },
-                { key: 'tactical', grad: 'var(--value-grad)' },
-                { key: 'safety', grad: 'var(--safety-grad)' }
+                { key: 'primary', grad: 'var(--hero-grad)', class: 'pick-primary' },
+                { key: 'safety', grad: 'var(--safety-grad)', class: 'pick-safety' },
+                { key: 'tactical', grad: 'var(--value-grad)', class: 'pick-tactical' }
             ];
 
             document.getElementById('picks-grid').innerHTML = types.map(t => {
                 const rec = recs[t.key];
                 return `
-                    <div class="pick-card" style="background: ${t.grad}">
+                    <div class="pick-card ${t.class}" style="background: ${t.grad}">
                         <div>
                             <div class="pick-type">${rec.type}</div>
                             <div class="pick-val">${rec.pick}</div>
@@ -472,18 +497,34 @@
 
             // Analytics
             document.getElementById('analytics-summary').innerHTML = `
-                <div style="display: flex; justify-content: space-around; text-align: center;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 15px; text-align: center;">
                     <div>
                         <div style="font-size: 0.7rem; color: var(--text-secondary);">BTTS</div>
-                        <div style="font-size: 1.2rem; font-weight: 800;">${(pred.btts * 100).toFixed(0)}%</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.btts * 100).toFixed(0)}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-secondary);">OVER 1.5</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.over15 * 100).toFixed(0)}%</div>
                     </div>
                     <div>
                         <div style="font-size: 0.7rem; color: var(--text-secondary);">OVER 2.5</div>
-                        <div style="font-size: 1.2rem; font-weight: 800;">${(pred.over25 * 100).toFixed(0)}%</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.over25 * 100).toFixed(0)}%</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.7rem; color: var(--text-secondary);">WIN PROB (H)</div>
-                        <div style="font-size: 1.2rem; font-weight: 800;">${(pred.h_win * 100).toFixed(0)}%</div>
+                        <div style="font-size: 0.7rem; color: var(--text-secondary);">WIN (H)</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.h_win * 100).toFixed(0)}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-secondary);">WIN (A)</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.mc_a_win * 100).toFixed(0)}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-secondary);">1X</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${((pred.h_win + pred.draw) * 100).toFixed(0)}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-secondary);">X2</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${((pred.mc_a_win + pred.draw) * 100).toFixed(0)}%</div>
                     </div>
                 </div>
             `;
