@@ -441,17 +441,28 @@
             display.style.opacity = '0.5';
 
             try {
-                const res = await fetch(`${API_BASE}/predict`, {
+                // Ensure API call uses the current host and protocol for online compatibility
+                const api_url = `${window.location.protocol}//${window.location.host}${API_BASE}/predict`;
+
+                const res = await fetch(api_url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ home_team: home, away_team: away, league: currentLeague })
                 });
+
+                if (!res.ok) {
+                    const errorBody = await res.text();
+                    throw new Error(`Server Error (${res.status}): ${errorBody}`);
+                }
+
                 const data = await res.json();
                 renderResults(data);
                 display.style.opacity = '1';
                 display.scrollIntoView({ behavior: 'smooth' });
             } catch (e) {
-                alert("Prediction failed: " + e.message);
+                console.error("Betly Intelligence Sync Error:", e);
+                alert("Intelligence Sync Interrupted:\n" + e.message);
+                display.style.opacity = '1';
             }
         }
 
