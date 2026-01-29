@@ -80,18 +80,22 @@ async def predict_match(request: MatchPredictionRequest):
         predictor = MatchPredictor()
         res = predictor.predict_match(home_norm, away_norm, df, is_ucl, live_odds)
         
+        if not res:
+            raise HTTPException(status_code=404, detail="Could not generate prediction for these teams.")
+
         # 5. Get recommendations
         recs = predictor.get_recommendations(res)
         
         # 6. Metadata (logos, etc.)
-        res['home_logo'] = DataService.fetch_team_logo(request.home_team)
-        res['away_logo'] = DataService.fetch_team_logo(request.away_team)
+        res['home_logo'] = DataService.fetch_team_logo(request.home_team) or ""
+        res['away_logo'] = DataService.fetch_team_logo(request.away_team) or ""
         
         return {
             "prediction": res,
             "recommendations": recs
         }
     except Exception as e:
+        print(f"Prediction Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

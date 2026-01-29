@@ -456,6 +456,10 @@
         }
 
         function renderResults(data) {
+            if (!data || !data.prediction) {
+                console.error("Invalid prediction data:", data);
+                return;
+            }
             const pred = data.prediction;
             const recs = data.recommendations;
 
