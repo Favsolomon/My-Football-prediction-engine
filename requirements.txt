@@ -7,3 +7,6 @@ lxml
 beautifulsoup4
 html5lib
 understatapi
+fastapi
+uvicorn
+python-multipart
