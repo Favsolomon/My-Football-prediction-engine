@@ -151,21 +151,22 @@ class DataService:
         
         def fetch_worker(code):
             try:
-                d, _ = DataService.fetch_league_data(code, season)
-                # Only fetch previous season if current season has very little data (early season)
-                if len(d) < 50:
-                    p, _ = DataService.fetch_league_data(code, str(int(season)-1))
-                    return [d, p]
-                return [d]
+                # Fetch current and previous 2 seasons for robust H2H
+                seasons_to_fetch = [season, str(int(season)-1), str(int(season)-2)]
+                dfs = []
+                for s in seasons_to_fetch:
+                    d, _ = DataService.fetch_league_data(code, s)
+                    if not d.empty: dfs.append(d)
+                return dfs
             except:
                 return []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(domestic_leagues)) as executor:
             results = list(executor.map(fetch_worker, domestic_leagues))
             for res in results:
-                master_dfs.extend(res)
+                if res: master_dfs.extend(res)
                 
-        return pd.concat(master_dfs) if master_dfs else pd.DataFrame()
+        return pd.concat(master_dfs).sort_values('DateTime') if master_dfs else pd.DataFrame()
     @staticmethod
     @ttl_cache(ttl=1800)
     def preload_competition_context(league_name, season="2025"):
@@ -178,10 +179,19 @@ class DataService:
             df = DataService.parallel_ucl_fetch(season)
             upcoming, status = DataService.fetch_ucl_fixtures(ODDS_API_KEY, LEAGUES_ODDS_API[league_name])
         else:
-            d_df, _ = DataService.fetch_league_data(league_code, season)
-            df = d_df
-            if not d_df.empty:
-                upcoming = d_df[d_df['xg'].isna() if 'xg' in d_df.columns else d_df['xG'].isna()].copy()
+            # Fetch current and previous 2 seasons to ensure 5 H2H matches
+            seasons = [season, str(int(season)-1), str(int(season)-2)]
+            season_dfs = []
+            for s in seasons:
+                d_df, _ = DataService.fetch_league_data(league_code, s)
+                if not d_df.empty: season_dfs.append(d_df)
+            
+            df = pd.concat(season_dfs).sort_values('DateTime') if season_dfs else pd.DataFrame()
+            
+            # Upcoming matches are only from the current season
+            current_df = season_dfs[0] if season_dfs else pd.DataFrame()
+            if not current_df.empty:
+                upcoming = current_df[current_df['xg'].isna() if 'xg' in current_df.columns else current_df['xG'].isna()].copy()
             else:
                 upcoming = pd.DataFrame(columns=['Home', 'Away', 'xG', 'xG.1', 'Score', 'DateTime'])
 
