@@ -1,5 +1,5 @@
 
-# ⚽ Agozie Match Predictor (Understat Integration)
+# ⚽ Betly AI (Understat Integration)
 
 A powerful web application that predicts football match outcomes using live Expected Goals (xG) data from **Understat.com**. Built with a modern FastAPI backend and a high-performance Vanilla JS frontend.
 

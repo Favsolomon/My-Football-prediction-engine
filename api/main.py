@@ -16,7 +16,7 @@ from src.engine import MatchPredictor
 from src.config import ODDS_API_KEY, LEAGUES_UNDERSTAT, LEAGUES_ODDS_API
 import uvicorn
 
-app = FastAPI(title="Football Prediction API")
+app = FastAPI(title="Betly AI API")
 
 # Enable CORS for frontend development
 app.add_middleware(
