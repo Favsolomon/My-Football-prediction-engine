@@ -501,6 +501,56 @@
             animation: shimmer 1.5s infinite;
         }
 
+        /* Probability Gauge */
+        .prob-gauge-container {
+            margin: 20px 0 30px 0;
+        }
+
+        .prob-gauge {
+            display: flex;
+            height: 14px;
+            border-radius: 7px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.05);
+            margin-bottom: 8px;
+        }
+
+        .gauge-h {
+            background: var(--accent-blue);
+            height: 100%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gauge-d {
+            background: #64748b;
+            height: 100%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gauge-a {
+            background: #f59e0b;
+            height: 100%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .label-h {
+            color: var(--accent-blue);
+        }
+
+        .label-a {
+            color: #f59e0b;
+        }
+
         @keyframes shimmer {
             0% {
                 background-position: -200% 0;
@@ -695,6 +745,33 @@
             // Score
             document.getElementById('predicted-score-val').innerText = pred.predicted_score;
 
+            // Probability Gauge
+            const hPerc = (pred.mc_h_win * 100).toFixed(0);
+            const dPerc = (pred.mc_draw * 100).toFixed(0);
+            const aPerc = (pred.mc_a_win * 100).toFixed(0);
+
+            const gaugeContainer = document.createElement('div');
+            gaugeContainer.className = 'prob-gauge-container';
+            gaugeContainer.innerHTML = `
+                <div class="prob-gauge">
+                    <div class="gauge-h" style="width: ${hPerc}%"></div>
+                    <div class="gauge-d" style="width: ${dPerc}%"></div>
+                    <div class="gauge-a" style="width: ${aPerc}%"></div>
+                </div>
+                <div class="gauge-labels">
+                    <span class="label-h">${pred.home} ${hPerc}%</span>
+                    <span>DRAW ${dPerc}%</span>
+                    <span class="label-a">${aPerc}% ${pred.away}</span>
+                </div>
+            `;
+
+            const resultsArea = document.querySelector('.results-area');
+            const scoreBox = document.querySelector('.score-box');
+            // Remove existing gauge if any
+            const oldGauge = document.querySelector('.prob-gauge-container');
+            if (oldGauge) oldGauge.remove();
+            scoreBox.parentNode.insertBefore(gaugeContainer, scoreBox.nextSibling);
+
             // Picks
             const types = [
                 { key: 'primary', grad: 'var(--hero-grad)', class: 'pick-primary' },
@@ -756,20 +833,12 @@
                         <div style="font-size: 1.1rem; font-weight: 800;">${(pred.over25 * 100).toFixed(0)}%</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.7rem; color: var(--text-secondary);">WIN (H)</div>
-                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.h_win * 100).toFixed(0)}%</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.7rem; color: var(--text-secondary);">WIN (A)</div>
-                        <div style="font-size: 1.1rem; font-weight: 800;">${(pred.mc_a_win * 100).toFixed(0)}%</div>
-                    </div>
-                    <div>
                         <div style="font-size: 0.7rem; color: var(--text-secondary);">1X</div>
-                        <div style="font-size: 1.1rem; font-weight: 800;">${((pred.h_win + pred.draw) * 100).toFixed(0)}%</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${((pred.mc_h_win + pred.mc_draw) * 100).toFixed(0)}%</div>
                     </div>
                     <div>
                         <div style="font-size: 0.7rem; color: var(--text-secondary);">X2</div>
-                        <div style="font-size: 1.1rem; font-weight: 800;">${((pred.mc_a_win + pred.draw) * 100).toFixed(0)}%</div>
+                        <div style="font-size: 1.1rem; font-weight: 800;">${((pred.mc_a_win + pred.mc_draw) * 100).toFixed(0)}%</div>
                     </div>
                 </div>
             `;
