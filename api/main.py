@@ -158,6 +158,10 @@ def get_smart_accumulator(season: str = "2025"):
                     # Robust lookup using the new batch map
                     odds = DataService.get_odds_for_fixture(league_odds_map, f['Home'], f['Away'])
                     
+                    if not odds and f['Home'] == "Barcelona":
+                        print(f"DEBUG: Odds Not Found for Barcelona! Map size: {len(league_odds_map)}")
+                        print(f"DEBUG: Keys in map: {list(league_odds_map.keys())[:5]}")
+                    
                     for oc in outcomes:
                         price = 0
                         if odds:
