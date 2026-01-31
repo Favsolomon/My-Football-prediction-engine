@@ -2,8 +2,19 @@
 # src/engine.py
 import numpy as np
 import pandas as pd
-from scipy.stats import poisson
 from .config import UCL_PEDIGREE, SQUAD_VALUE_INDEX
+
+def poisson_pmf(k_array, lam):
+    """Native numpy implementation of Poisson PMF to avoid scipy dependency."""
+    # P(k; lam) = lam^k * e^-lam / k!
+    # Using small k (0-9) so factorials are trivial.
+    factorials = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880])
+    k_array = np.array(k_array, dtype=int)
+    
+    # Safe guard for larger k if ever used, but we only use range(10)
+    facts = np.array([factorials[k] if k < 10 else np.prod(np.arange(1, k+1)) for k in k_array])
+    
+    return (np.power(lam, k_array) * np.exp(-lam)) / facts
 
 class MatchPredictor:
     """Core logic engine for computing probabilities and value recommendations."""
@@ -284,8 +295,8 @@ class MatchPredictor:
                     l_away *= 1.02
             except: pass
 
-        h_pmf = poisson.pmf(np.arange(10), l_home)
-        a_pmf = poisson.pmf(np.arange(10), l_away)
+        h_pmf = poisson_pmf(np.arange(10), l_home)
+        a_pmf = poisson_pmf(np.arange(10), l_away)
         matrix = np.outer(h_pmf, a_pmf)
 
         for i in range(2):
