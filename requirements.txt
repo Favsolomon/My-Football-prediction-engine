@@ -10,3 +10,5 @@ fastapi
 uvicorn
 python-multipart
 cachetools
+fuzzywuzzy
+python-Levenshtein
