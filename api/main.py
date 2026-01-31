@@ -34,6 +34,7 @@ class MatchPredictionRequest(BaseModel):
     season: str = "2025"
 
 @app.get("/")
+@app.get("/index.html")
 async def read_index():
     return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'index.html'))
 
@@ -65,7 +66,7 @@ async def get_fixtures(league_name: str, season: str = "2025"):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/predict")
-async def predict_match(request: MatchPredictionRequest):
+def predict_match(request: MatchPredictionRequest):
     try:
         # 1. Fetch data context
         _, data = DataService.preload_competition_context(request.league, request.season)
@@ -103,7 +104,7 @@ async def predict_match(request: MatchPredictionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/accumulator")
-async def get_smart_accumulator(season: str = "2025"):
+def get_smart_accumulator(season: str = "2025"):
     """Senior Quant logic for cross-league accumulator optimization."""
     try:
         import concurrent.futures
