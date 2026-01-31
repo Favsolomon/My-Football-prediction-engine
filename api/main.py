@@ -136,45 +136,56 @@ def get_smart_accumulator(season: str = "2025"):
                     
                     if upcoming_today.empty: return []
                     
-                    # For each match, generate candidates
-                    for _, f in upcoming_today.head(10).iterrows(): 
-                        home_norm = DataService.normalize_team_name(f['Home'])
-                        away_norm = DataService.normalize_team_name(f['Away'])
+                    # Pre-fetch ODDS for the whole league once
+                    sport_key = LEAGUES_ODDS_API.get(league_name)
+                    league_odds_map = DataService.fetch_odds_batch(ODDS_API_KEY, sport_key) if sport_key else {}
+                
+                # For each match, generate candidates
+                for _, f in upcoming_today.head(10).iterrows(): 
+                    home_norm = DataService.normalize_team_name(f['Home'])
+                    away_norm = DataService.normalize_team_name(f['Away'])
+                    
+                    res = predictor.predict_match(home_norm, away_norm, df, is_ucl)
+                    if not res: continue
+                    
+                    outcomes = [
+                        {"market": "H2H", "selection": f"{f['Home']} Win", "true_prob": res['h_win']},
+                        {"market": "H2H", "selection": f"{f['Away']} Win", "true_prob": res['a_win']},
+                        {"market": "Goals", "selection": "Over 2.5", "true_prob": res['over25']},
+                        {"market": "Goals", "selection": "Over 1.5", "true_prob": res['over15']},
+                    ]
+                    
+                    # Robust lookup using the new batch map
+                    odds = DataService.get_odds_for_fixture(league_odds_map, f['Home'], f['Away'])
+                    
+                    for oc in outcomes:
+                        price = 0
+                        if odds:
+                            if oc['market'] == "H2H":
+                                price = odds['h2h'].get('home') if "Home" in oc['selection'] else odds['h2h'].get('away')
+                            if oc['market'] == "Goals":
+                                price = odds['totals'].get('over25') if "2.5" in oc['selection'] else odds['totals'].get('over15')
                         
-                        res = predictor.predict_match(home_norm, away_norm, df, is_ucl)
-                        if not res: continue
+                        # Fallback ONLY if logic fails, but now we have real odds or 0 (skip)
+                        # User wants sync with real odds. If no odds, we skip to avoid fake accumulation.
+                        # Unless it's a very clear favorite in our model? 
+                        # To comply with user request "not real life odd... sync with real odd", 
+                        # let's be strict: if price is 0 (missing), we skip this leg or penalize it heavily.
+                        # However, for robustness, if we miss odds, let's just ignore this market for the accumulator.
+                        if not price or price <= 1.01: continue
                         
-                        outcomes = [
-                            {"market": "H2H", "selection": f"{f['Home']} Win", "true_prob": res['h_win']},
-                            {"market": "H2H", "selection": f"{f['Away']} Win", "true_prob": res['a_win']},
-                            {"market": "Goals", "selection": "Over 2.5", "true_prob": res['over25']},
-                            {"market": "Goals", "selection": "Over 1.5", "true_prob": res['over15']},
-                        ]
+                        oc['decimal_odds'] = price
+                        oc['implied_prob'] = 1/price
+                        oc['edge'] = oc['true_prob'] - oc['implied_prob']
                         
-                        sport_key = LEAGUES_ODDS_API.get(league_name)
-                        odds = DataService.fetch_live_odds(ODDS_API_KEY, sport_key, f['Home'], f['Away']) if sport_key else None
-                        
-                        for oc in outcomes:
-                            price = 2.0
-                            if odds:
-                                if oc['market'] == "H2H":
-                                    price = odds['h2h'].get('home') if "Home" in oc['selection'] else odds['h2h'].get('away')
-                                if oc['market'] == "Goals":
-                                    price = odds['totals'].get('over25') if "2.5" in oc['selection'] else odds['totals'].get('over15')
-                            
-                            price = price or 2.0
-                            oc['decimal_odds'] = price
-                            oc['implied_prob'] = 1/price
-                            oc['edge'] = oc['true_prob'] - oc['implied_prob']
-                            
-                            if oc['edge'] >= min_edge:
-                                league_candidates.append({
-                                    **oc,
-                                    "fixture": f"{f['Home']} vs {f['Away']}",
-                                    "league": league_name,
-                                    "edge_percent": round(oc['edge'] * 100, 1),
-                                    "independence_factor": "Diversified"
-                                })
+                        if oc['edge'] >= min_edge:
+                            league_candidates.append({
+                                **oc,
+                                "fixture": f"{f['Home']} vs {f['Away']}",
+                                "league": league_name,
+                                "edge_percent": round(oc['edge'] * 100, 1),
+                                "independence_factor": "Diversified"
+                            })
                 except Exception as e:
                     print(f"Error processing {league_name}: {e}")
                 return league_candidates
