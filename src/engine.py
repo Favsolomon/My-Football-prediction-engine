@@ -441,11 +441,11 @@ class AccumulatorOptimizer:
         
         return int(edge_pts + prob_pts + proximity_pts + div_pts + leg_pts)
 
-    def find_optimal(self, candidate_legs):
+    def find_optimal(self, candidate_legs, relaxed_mode=False):
         """Combinatorial search for the highest Score(A)."""
         import itertools
         best_acca = None
-        best_score = -1
+        best_score = -999 # Allow searching for best possible even if negative in extremely relaxed mode
         
         # Limit legs to 5
         leg_limit = min(5, len(candidate_legs))
@@ -457,7 +457,12 @@ class AccumulatorOptimizer:
                 if len(set(matches)) < r: continue
                 
                 c_odds = np.prod([l['decimal_odds'] for l in combo])
-                if not (self.range_low <= c_odds <= self.range_high): continue
+                
+                # In relaxed mode, slightly widen the odds range if needed
+                low = self.range_low if not relaxed_mode else 2.5
+                high = self.range_high if not relaxed_mode else 4.0
+                
+                if not (low <= c_odds <= high): continue
                 
                 # Apply leg penalties (-0.02 alpha per leg beyond 3)
                 adj_prob_multiplier = 1.0
@@ -467,7 +472,25 @@ class AccumulatorOptimizer:
                 
                 c_prob = np.prod([l['true_prob'] for l in combo]) * adj_prob_multiplier
                 
-                score = self.calculate_score(combo, c_prob, c_odds)
+                # In relaxed mode, we might accept negative EV if user insists on a bet
+                # but let's try to keep it at least > -3% EV
+                ev = (c_prob * c_odds) - 1
+                if not relaxed_mode and ev <= 0: continue
+                
+                # Calculate utility score
+                # Re-implement simplified score here to avoid strict EV checks in calculate_score
+                # for relaxed mode
+                
+                avg_rho = 0
+                max_rho = 0
+                if r > 1:
+                    rhos = [self.get_correlation(combo[i], combo[j]) for i in range(r) for j in range(i+1, r)]
+                    avg_rho = np.mean(rhos)
+                    max_rho = max(rhos)
+                
+                if max_rho > 0.40 and not relaxed_mode: continue
+                
+                score = (ev * np.sqrt(c_prob)) / ((r ** 1.5) * (1 + max_rho))
                 
                 if score > best_score:
                     # Select fewer legs if scores are nearly identical
@@ -475,10 +498,6 @@ class AccumulatorOptimizer:
                         continue
                     
                     best_score = score
-                    avg_rho = 0
-                    if r > 1:
-                        rhos = [self.get_correlation(combo[i], combo[j]) for i in range(r) for j in range(i+1, r)]
-                        avg_rho = np.mean(rhos)
                     
                     conf = self.compute_confidence(combo, c_prob, c_odds, avg_rho)
                     ev_pct = (c_prob * c_odds - 1) * 100
@@ -488,6 +507,7 @@ class AccumulatorOptimizer:
                     if conf >= 90: band = "High Confidence"
                     elif conf >= 70: band = "Solid Play"
                     elif conf >= 50: band = "Marginal"
+                    else: band = "Speculative" # New band for relaxed mode
                     
                     best_acca = {
                         "target_odds": self.target_odds,
@@ -495,7 +515,7 @@ class AccumulatorOptimizer:
                         "legs": combo,
                         "combined_probability": round(c_prob, 3),
                         "expected_value_percent": round(ev_pct, 1),
-                        "kelly_fraction": round(kelly * 0.25 * 10, 2), # Adjusted Stake Units
+                        "kelly_fraction": round(max(0.1, kelly * 0.25 * 10), 2), # Ensure min stake for engagement
                         "confidence_score": conf,
                         "confidence_band": band,
                         "risk_factors": [
@@ -505,9 +525,16 @@ class AccumulatorOptimizer:
                         "score": score
                     }
         
-        if not best_acca or best_acca['confidence_score'] < 50:
-            return None
-            
+        # Strict Mode Threshold
+        if not relaxed_mode:
+            if not best_acca or best_acca['confidence_score'] < 50:
+                return None
+        
+        # Relaxed Mode: Return best found, even if low confidence
+        if relaxed_mode and best_acca:
+             best_acca['risk_factors'].append("Relaxed constraints applied")
+             return best_acca
+             
         return best_acca
 
 

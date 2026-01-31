@@ -108,89 +108,102 @@ def get_smart_accumulator(season: str = "2025"):
     """Senior Quant logic for cross-league accumulator optimization."""
     try:
         import concurrent.futures
-        all_candidates = []
+        from src.engine import AccumulatorOptimizer
+        from datetime import datetime # Moved import here for broader scope
+        
         predictor = MatchPredictor()
         
-        def process_league(league_name):
-            league_candidates = []
-            try:
-                # Use a specific season for UCL if needed
-                season_to_fetch = season if int(season) < 2025 or league_name != "Champions League" else "2024"
-                _, data = DataService.preload_competition_context(league_name, season_to_fetch)
-                upcoming = data.get("upcoming", pd.DataFrame())
-                df = data.get("df")
-                is_ucl = league_name == "Champions League"
-                
-                if upcoming.empty: return []
-                
-                # Filter for TODAY ONLY as requested by user
-                from datetime import datetime
-                today = datetime.now().date()
-                upcoming['MatchDate'] = pd.to_datetime(upcoming['DateTime']).dt.date
-                upcoming_today = upcoming[upcoming['MatchDate'] == today]
-                
-                if upcoming_today.empty:
-                    # If no matches today, look for matches in the next 24 hours as a fallback 
-                    # but prioritize today. For now, let's stick to strict "today".
-                    return []
-                
-                # For each match, generate candidates
-                for _, f in upcoming_today.head(10).iterrows(): 
-                    home_norm = DataService.normalize_team_name(f['Home'])
-                    away_norm = DataService.normalize_team_name(f['Away'])
+        # Helper to fetch candidates with adjustable strictness
+        def fetch_candidates(min_edge=0.03):
+            candidates = []
+            
+            def process_league(league_name):
+                league_candidates = []
+                try:
+                    # Use a specific season for UCL if needed
+                    season_to_fetch = season if int(season) < 2025 or league_name != "Champions League" else "2024"
+                    _, data = DataService.preload_competition_context(league_name, season_to_fetch)
+                    upcoming = data.get("upcoming", pd.DataFrame())
+                    df = data.get("df")
+                    is_ucl = league_name == "Champions League"
                     
-                    res = predictor.predict_match(home_norm, away_norm, df, is_ucl)
-                    if not res: continue
+                    if upcoming.empty: return []
                     
-                    outcomes = [
-                        {"market": "H2H", "selection": f"{f['Home']} Win", "true_prob": res['h_win']},
-                        {"market": "H2H", "selection": f"{f['Away']} Win", "true_prob": res['a_win']},
-                        {"market": "Goals", "selection": "Over 2.5", "true_prob": res['over25']},
-                        {"market": "Goals", "selection": "Over 1.5", "true_prob": res['over15']},
-                    ]
+                    # Filter for TODAY ONLY as requested by user
+                    today = datetime.now().date()
+                    upcoming['MatchDate'] = pd.to_datetime(upcoming['DateTime']).dt.date
+                    upcoming_today = upcoming[upcoming['MatchDate'] == today]
                     
-                    sport_key = LEAGUES_ODDS_API.get(league_name)
-                    odds = DataService.fetch_live_odds(ODDS_API_KEY, sport_key, f['Home'], f['Away']) if sport_key else None
+                    if upcoming_today.empty: return []
                     
-                    for oc in outcomes:
-                        price = 2.0
-                        if odds:
-                            if oc['market'] == "H2H":
-                                price = odds['h2h'].get('home') if "Home" in oc['selection'] else odds['h2h'].get('away')
-                            if oc['market'] == "Goals":
-                                price = odds['totals'].get('over25') if "2.5" in oc['selection'] else odds['totals'].get('over15')
+                    # For each match, generate candidates
+                    for _, f in upcoming_today.head(10).iterrows(): 
+                        home_norm = DataService.normalize_team_name(f['Home'])
+                        away_norm = DataService.normalize_team_name(f['Away'])
                         
-                        price = price or 2.0
-                        oc['decimal_odds'] = price
-                        oc['implied_prob'] = 1/price
-                        oc['edge'] = oc['true_prob'] - oc['implied_prob']
+                        res = predictor.predict_match(home_norm, away_norm, df, is_ucl)
+                        if not res: continue
                         
-                        if oc['edge'] >= 0.03:
-                            league_candidates.append({
-                                **oc,
-                                "fixture": f"{f['Home']} vs {f['Away']}",
-                                "league": league_name,
-                                "edge_percent": round(oc['edge'] * 100, 1),
-                                "independence_factor": "Diversified"
-                            })
-            except Exception as e:
-                print(f"Error processing {league_name}: {e}")
-            return league_candidates
+                        outcomes = [
+                            {"market": "H2H", "selection": f"{f['Home']} Win", "true_prob": res['h_win']},
+                            {"market": "H2H", "selection": f"{f['Away']} Win", "true_prob": res['a_win']},
+                            {"market": "Goals", "selection": "Over 2.5", "true_prob": res['over25']},
+                            {"market": "Goals", "selection": "Over 1.5", "true_prob": res['over15']},
+                        ]
+                        
+                        sport_key = LEAGUES_ODDS_API.get(league_name)
+                        odds = DataService.fetch_live_odds(ODDS_API_KEY, sport_key, f['Home'], f['Away']) if sport_key else None
+                        
+                        for oc in outcomes:
+                            price = 2.0
+                            if odds:
+                                if oc['market'] == "H2H":
+                                    price = odds['h2h'].get('home') if "Home" in oc['selection'] else odds['h2h'].get('away')
+                                if oc['market'] == "Goals":
+                                    price = odds['totals'].get('over25') if "2.5" in oc['selection'] else odds['totals'].get('over15')
+                            
+                            price = price or 2.0
+                            oc['decimal_odds'] = price
+                            oc['implied_prob'] = 1/price
+                            oc['edge'] = oc['true_prob'] - oc['implied_prob']
+                            
+                            if oc['edge'] >= min_edge:
+                                league_candidates.append({
+                                    **oc,
+                                    "fixture": f"{f['Home']} vs {f['Away']}",
+                                    "league": league_name,
+                                    "edge_percent": round(oc['edge'] * 100, 1),
+                                    "independence_factor": "Diversified"
+                                })
+                except Exception as e:
+                    print(f"Error processing {league_name}: {e}")
+                return league_candidates
 
-        # 1. Parallelize League Processing
-        leagues_to_process = list(LEAGUES_UNDERSTAT.keys())
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(leagues_to_process)) as executor:
-            future_to_league = {executor.submit(process_league, name): name for name in leagues_to_process}
-            for future in concurrent.futures.as_completed(future_to_league):
-                all_candidates.extend(future.result())
+            leagues_to_process = list(LEAGUES_UNDERSTAT.keys())
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(leagues_to_process)) as executor:
+                future_to_league = {executor.submit(process_league, name): name for name in leagues_to_process}
+                for future in concurrent.futures.as_completed(future_to_league):
+                    candidates.extend(future.result())
+            return candidates
 
-        if not all_candidates:
-            return {"accumulator": None, "message": "NO BET – Insufficient value in current market"}
-
-        # 2. Optimize
-        from src.engine import AccumulatorOptimizer
+        # 1. First Pass: Strict Mode (Edge >= 3%)
+        candidates = fetch_candidates(min_edge=0.03)
         optimizer = AccumulatorOptimizer()
-        result = optimizer.find_optimal(all_candidates)
+        result = None
+        
+        if candidates:
+            result = optimizer.find_optimal(candidates, relaxed_mode=False)
+            
+        # 2. Second Pass: Relaxed Mode (Edge >= 0%) if strict failed
+        # This occurs if strictly no good bets exist. We loosen constraints to provide *something* useful.
+        rationale_suffix = ""
+        if not result:
+            print("Strict mode failed. Retrying with relaxed constraints...")
+            # Re-fetch with lower edge threshold (allow break-even bets)
+            candidates = fetch_candidates(min_edge=0.00) 
+            if candidates:
+                result = optimizer.find_optimal(candidates, relaxed_mode=True)
+                rationale_suffix = " (Constraints relaxed to ensure matchday coverage)"
         
         if not result:
             return {"accumulator": None, "message": "NO BET – Market Too Efficient at Target Odds"}
@@ -198,7 +211,7 @@ def get_smart_accumulator(season: str = "2025"):
         result['legs'] = list(result['legs'])
         return {
             "accumulator": result,
-            "statistical_rationale": f"Parallel crunching completed across {len(leagues_to_process)} leagues. Alpha edges >= 3% prioritized."
+            "statistical_rationale": f"Optimized across {len(LEAGUES_UNDERSTAT)} leagues. Selection prioritizes alpha edges.{rationale_suffix}"
         }
         
     except Exception as e:
