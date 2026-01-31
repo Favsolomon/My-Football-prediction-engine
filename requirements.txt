@@ -12,3 +12,4 @@ python-multipart
 cachetools
 fuzzywuzzy
 python-Levenshtein
+aiohttp
