@@ -37,6 +37,10 @@ class MatchPredictionRequest(BaseModel):
 async def read_index():
     return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'index.html'))
 
+@app.get("/accumulator.html")
+async def read_accumulator():
+    return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'accumulator.html'))
+
 @app.get("/api/leagues")
 async def get_leagues():
     return [{"name": name, "code": code} for name, code in LEAGUES_UNDERSTAT.items()]
