@@ -386,5 +386,129 @@ class MatchPredictor:
             "safety": {"pick": safety_pick, "insight": safety_insight, "type": "Safety Pick"}
         }
 
+class AccumulatorOptimizer:
+    """Professional-grade combinatorial optimizer for multi-leg betting."""
+    
+    def __init__(self, target_odds=3.0, range_low=2.8, range_high=3.3):
+        self.target_odds = target_odds
+        self.range_low = range_low
+        self.range_high = range_high
+
+    def get_correlation(self, leg1, leg2):
+        """Heuristic ρ calculation based on league and market overlap."""
+        same_league = leg1['league'] == leg2['league']
+        same_market = leg1['market'] == leg2['market']
+        
+        if same_league and same_market: return 0.35
+        if same_league: return 0.20
+        if same_market: return 0.15
+        return 0.05
+
+    def calculate_score(self, legs, combined_prob, combined_odds):
+        """Standardized Risk-Adjusted Utility Score."""
+        ev = (combined_prob * combined_odds) - 1
+        if ev <= 0: return -1
+        
+        leg_count = len(legs)
+        max_rho = 0
+        for i in range(leg_count):
+            for j in range(i + 1, leg_count):
+                max_rho = max(max_rho, self.get_correlation(legs[i], legs[j]))
+        
+        if max_rho > 0.40: return -1 # Hard constraint
+        
+        score = (ev * np.sqrt(combined_prob)) / ((leg_count ** 1.5) * (1 + max_rho))
+        return score
+
+    def compute_confidence(self, legs, combined_prob, combined_odds, avg_rho):
+        """Composite 0-100 Confidence Score."""
+        # 1. Edge Strength (30%)
+        alphas = [l['true_prob'] - l['implied_prob'] for l in legs]
+        avg_alpha = np.mean(alphas)
+        edge_pts = min(avg_alpha * 500, 30)
+        
+        # 2. Probability Density (25%)
+        prob_pts = combined_prob * 25
+        
+        # 3. Odds Proximity (20%)
+        proximity_pts = 20 - abs(self.target_odds - combined_odds) * 20
+        
+        # 4. Diversification (15%)
+        div_pts = 15 * (1 - avg_rho)
+        
+        # 5. Leg Efficiency (10%)
+        leg_pts = max(0, 10 - abs(len(legs) - 3) * 5)
+        
+        return int(edge_pts + prob_pts + proximity_pts + div_pts + leg_pts)
+
+    def find_optimal(self, candidate_legs):
+        """Combinatorial search for the highest Score(A)."""
+        import itertools
+        best_acca = None
+        best_score = -1
+        
+        # Limit legs to 5
+        leg_limit = min(5, len(candidate_legs))
+        
+        for r in range(1, leg_limit + 1):
+            for combo in itertools.combinations(candidate_legs, r):
+                # Verify no two legs from same match
+                matches = [l['fixture'] for l in combo]
+                if len(set(matches)) < r: continue
+                
+                c_odds = np.prod([l['decimal_odds'] for l in combo])
+                if not (self.range_low <= c_odds <= self.range_high): continue
+                
+                # Apply leg penalties (-0.02 alpha per leg beyond 3)
+                adj_prob_multiplier = 1.0
+                if r > 3:
+                    penalty = (r - 3) * 0.02
+                    adj_prob_multiplier = (1.0 - penalty)
+                
+                c_prob = np.prod([l['true_prob'] for l in combo]) * adj_prob_multiplier
+                
+                score = self.calculate_score(combo, c_prob, c_odds)
+                
+                if score > best_score:
+                    # Select fewer legs if scores are nearly identical
+                    if best_acca and abs(score - best_score) < 0.05 and r > len(best_acca['legs']):
+                        continue
+                    
+                    best_score = score
+                    avg_rho = 0
+                    if r > 1:
+                        rhos = [self.get_correlation(combo[i], combo[j]) for i in range(r) for j in range(i+1, r)]
+                        avg_rho = np.mean(rhos)
+                    
+                    conf = self.compute_confidence(combo, c_prob, c_odds, avg_rho)
+                    ev_pct = (c_prob * c_odds - 1) * 100
+                    kelly = (ev_pct / 100) / (c_odds - 1) if c_odds > 1 else 0
+                    
+                    band = "Reject"
+                    if conf >= 90: band = "High Confidence"
+                    elif conf >= 70: band = "Solid Play"
+                    elif conf >= 50: band = "Marginal"
+                    
+                    best_acca = {
+                        "target_odds": self.target_odds,
+                        "actual_odds": round(c_odds, 2),
+                        "legs": combo,
+                        "combined_probability": round(c_prob, 3),
+                        "expected_value_percent": round(ev_pct, 1),
+                        "kelly_fraction": round(kelly * 0.25 * 10, 2), # Adjusted Stake Units
+                        "confidence_score": conf,
+                        "confidence_band": band,
+                        "risk_factors": [
+                            f"{'High' if avg_rho > 0.2 else 'Low'} correlation across legs",
+                            "Model variance at higher leg counts" if r > 3 else "Stable leg count"
+                        ],
+                        "score": score
+                    }
+        
+        if not best_acca or best_acca['confidence_score'] < 50:
+            return None
+            
+        return best_acca
+
 
 
