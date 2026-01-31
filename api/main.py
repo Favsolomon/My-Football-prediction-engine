@@ -221,7 +221,32 @@ def get_smart_accumulator(season: str = "2025"):
                 rationale_suffix = " (Constraints relaxed to ensure matchday coverage)"
         
         if not result:
-            return {"accumulator": None, "message": "NO BET – Market Too Efficient at Target Odds"}
+            # Fallback 3: "Top Picks" Mode (Market Too Efficient for Acca)
+            # If we still have no accumulator, select the absolute best single bets
+            # Sort all candidates by Edge % (Value) and return top 6
+            print("Relaxed accumulator failed. Switching to Top Picks mode.")
+            
+            if not candidates:
+                 return {"accumulator": None, "message": "NO BET – Insufficient value in current market"}
+                 
+            # Sort by Edge Descending
+            top_picks = sorted(candidates, key=lambda x: x['edge'], reverse=True)
+            
+            # Filter for sane probabilities (e.g. > 40%) to avoid huge longshots in "Top Picks"
+            top_picks = [p for p in top_picks if p['true_prob'] > 0.45]
+            
+            # Take top 6 (clamped between 4 and 7 as requested, but taking top 6 satisfies "not less than 4 not above 7")
+            selected_picks = top_picks[:6]
+            
+            if len(selected_picks) < 4:
+                 return {"accumulator": None, "message": "NO BET – Market Too Efficient (No Value Found)"}
+            
+            return {
+                "accumulator": None,
+                "top_picks": selected_picks,
+                "message": "Market Too Efficient for Accumulator. showing Top Picks.",
+                "statistical_rationale": "Market efficiency is high today. Displaying highest-alpha individual selections."
+            }
             
         result['legs'] = list(result['legs'])
         return {

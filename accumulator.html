@@ -364,12 +364,58 @@
                         </div>
                     </div>
                 `;
-            } catch (e) {
-                console.error("Acca load failed", e);
+            } else if (data.top_picks) {
                 loading.style.display = 'none';
-                noBet.innerHTML = '<div class="no-bet-title">SYNC FAILURE</div><p>Intelligence node is currently unreachable. Please try again later.</p>';
+                content.style.display = 'block';
+
+                // Render Top Picks UI
+                const picksHtml = data.top_picks.map(pick => `
+                    <div class="leg-item" style="border-left: 3px solid #ffd700;">
+                        <div class="leg-main">
+                            <span class="leg-fixture">${pick.fixture}</span>
+                            <span class="leg-selection">${pick.selection}</span>
+                        </div>
+                        <div class="leg-meta">
+                            <span class="leg-odds">@${pick.decimal_odds.toFixed(2)}</span>
+                            <span class="leg-edge" style="color: #4ade80;">Edge: +${pick.edge_percent}%</span>
+                        </div>
+                    </div>
+                 `).join('');
+
+                content.innerHTML = `
+                    <div class="status-banner" style="background: rgba(255, 215, 0, 0.15); border: 1px solid rgba(255, 215, 0, 0.3);">
+                        <div class="status-icon">⚠️</div>
+                        <div class="status-text">
+                            <strong>Market Efficiency Alert</strong><br>
+                            Stable accumulator not found. Displaying alpha-ranked top picks.
+                        </div>
+                    </div>
+
+                    <div class="ticket-container">
+                        <div class="ticket-header">
+                            <div class="ticket-title">TOP PICKS FOR THE DAY</div>
+                            <div class="ticket-id">QUANT-SELECT-${new Date().toISOString().slice(0, 10)}</div>
+                        </div>
+                        
+                        <div class="legs-container">
+                            ${picksHtml}
+                        </div>
+
+                        <div class="rationale-box">
+                            "${data.statistical_rationale}"
+                        </div>
+                    </div>
+                 `;
+            } else {
+                loading.style.display = 'none';
                 noBet.style.display = 'block';
             }
+        } catch (e) {
+            console.error("Acca load failed", e);
+            loading.style.display = 'none';
+            noBet.innerHTML = '<div class="no-bet-title">SYNC FAILURE</div><p>Intelligence node is currently unreachable. Please try again later.</p>';
+            noBet.style.display = 'block';
+        }
         }
 
         // Run on load
