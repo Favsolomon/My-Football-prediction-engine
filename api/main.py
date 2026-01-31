@@ -118,8 +118,19 @@ async def get_smart_accumulator(season: str = "2025"):
                 
                 if upcoming.empty: return []
                 
+                # Filter for TODAY ONLY as requested by user
+                from datetime import datetime
+                today = datetime.now().date()
+                upcoming['MatchDate'] = pd.to_datetime(upcoming['DateTime']).dt.date
+                upcoming_today = upcoming[upcoming['MatchDate'] == today]
+                
+                if upcoming_today.empty:
+                    # If no matches today, look for matches in the next 24 hours as a fallback 
+                    # but prioritize today. For now, let's stick to strict "today".
+                    return []
+                
                 # For each match, generate candidates
-                for _, f in upcoming.head(8).iterrows(): # Balanced scan limit
+                for _, f in upcoming_today.head(10).iterrows(): 
                     home_norm = DataService.normalize_team_name(f['Home'])
                     away_norm = DataService.normalize_team_name(f['Away'])
                     
