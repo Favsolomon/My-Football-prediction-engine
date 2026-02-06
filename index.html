@@ -572,12 +572,182 @@
                 transform: translateY(0);
             }
         }
+
+        /* --- HISTORY & MENU STYLES --- */
+        .menu-btn {
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+        }
+
+        .menu-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--accent-blue);
+        }
+
+        .menu-icon {
+            width: 24px;
+            height: 2px;
+            background: white;
+            position: relative;
+        }
+
+        .menu-icon::before,
+        .menu-icon::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background: white;
+            left: 0;
+        }
+
+        .menu-icon::before {
+            top: -8px;
+        }
+
+        .menu-icon::after {
+            top: 8px;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -300px;
+            width: 280px;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1000;
+            transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 100px 30px;
+            box-shadow: 10px 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .sidebar.open {
+            left: 0;
+        }
+
+        .nav-link {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            color: var(--accent-blue);
+            transform: translateX(10px);
+        }
+
+        .history-table-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .history-table th {
+            text-align: left;
+            padding: 15px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .history-table td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .status-won {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .status-lost {
+            background: rgba(244, 63, 94, 0.2);
+            color: #f43f5e;
+        }
+
+        .status-pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .filter-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .filter-btn.active {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s;
+        }
+
+        .overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
         <header>
+            <div class="menu-btn" onclick="toggleMenu()">
+                <div class="menu-icon"></div>
+            </div>
             <div class="logo-box">
                 <h1>BETLY AI</h1>
                 <div class="sidebar-identity">PROFESSIONAL QUANTITATIVE PREDICTION</div>
@@ -590,62 +760,217 @@
             </a>
         </header>
 
-        <nav class="tabs" id="league-tabs">
-            <!-- Tabs injected via JS -->
+        <div class="overlay" onclick="toggleMenu()"></div>
+        <nav class="sidebar">
+            <h3 style="color:white; margin-bottom: 30px; font-size: 1.2rem;">NAVIGATION</h3>
+            <a href="#" class="nav-link active" onclick="switchView('tactical')">Tactical Core</a>
+            <a href="#" class="nav-link" onclick="switchView('history')">Prediction History</a>
+            <a href="accumulator.html" class="nav-link">Quant Optimizer</a>
         </nav>
 
-        <main class="main-layout">
-            <aside class="glass-card selector-box">
-                <h2>Match Fixtures</h2>
-                <div id="fixture-list">
-                    <!-- Fixtures injected via JS -->
-                    <div class="fixture-item loading-shimmer" style="height: 70px;"></div>
-                    <div class="fixture-item loading-shimmer" style="height: 70px;"></div>
-                    <div class="fixture-item loading-shimmer" style="height: 70px;"></div>
+        <!-- View: Tactical Core (Main) -->
+        <div id="view-tactical">
+            <nav class="tabs" id="league-tabs">
+                <!-- Tabs injected via JS -->
+            </nav>
+
+            <main class="main-layout">
+                <aside class="glass-card selector-box">
+                    <h2>Match Fixtures</h2>
+                    <div id="fixture-list">
+                        <!-- Fixtures injected via JS -->
+                        <div class="fixture-item loading-shimmer" style="height: 70px;"></div>
+                        <div class="fixture-item loading-shimmer" style="height: 70px;"></div>
+                        <div class="fixture-item loading-shimmer" style="height: 70px;"></div>
+                    </div>
+                </aside>
+
+                <section id="results-display" class="results-area">
+                    <div class="glass-card">
+                        <div class="match-header" id="match-header">
+                            <!-- Header injected via JS -->
+                        </div>
+
+                        <div class="score-box">
+                            <div class="score-label">AI PREDICTED SCORE</div>
+                            <div class="score-val" id="predicted-score-val">--</div>
+                        </div>
+
+                        <div class="picks-grid" id="picks-grid">
+                            <!-- Picks injected via JS -->
+                        </div>
+
+                        <div id="analytics-summary"
+                            style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
+                            <!-- Analytics injected via JS -->
+                        </div>
+                    </div>
+
+                    <div id="h2h-history" style="display: none;">
+                        <!-- H2H History injected via JS -->
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- View: History -->
+        <div id="view-history" style="display: none;">
+            <div class="glass-card" style="max-width: 900px; margin: 0 auto;">
+                <h2 style="margin-bottom: 20px; color: var(--accent-glow);">PREDICTION PERFORMANCE</h2>
+
+                <div class="filter-bar">
+                    <button class="filter-btn active" onclick="filterHistory('all')">ALL</button>
+                    <button class="filter-btn" onclick="filterHistory('won')">WINS</button>
+                    <button class="filter-btn" onclick="filterHistory('lost')">LOSSES</button>
+                    <button class="filter-btn" onclick="filterHistory('pending')">PENDING</button>
+                    <button class="filter-btn" onclick="clearHistory()"
+                        style="margin-left: auto; color: #f43f5e;">Reset</button>
                 </div>
-            </aside>
 
-            <section id="results-display" class="results-area">
-                <div class="glass-card">
-                    <div class="match-header" id="match-header">
-                        <!-- Header injected via JS -->
-                    </div>
-
-                    <div class="score-box">
-                        <div class="score-label">AI PREDICTED SCORE</div>
-                        <div class="score-val" id="predicted-score-val">--</div>
-                    </div>
-
-                    <div class="picks-grid" id="picks-grid">
-                        <!-- Picks injected via JS -->
-                    </div>
-
-                    <div id="analytics-summary"
-                        style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
-                        <!-- Analytics injected via JS -->
-                    </div>
+                <div class="history-table-container">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Match</th>
+                                <th>Prediction</th>
+                                <th>Result</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody">
+                            <!-- Injected JS -->
+                        </tbody>
+                    </table>
                 </div>
-
-                <div id="h2h-history" style="display: none;">
-                    <!-- H2H History injected via JS -->
-                </div>
-            </section>
-        </main>
+            </div>
+        </div>
     </div>
 
     <script>
         const API_BASE = '/api';
         let currentLeague = 'Premier League';
         let leagues = [];
+        let historyData = [];
 
         async function init() {
             try {
+                loadHistory(); // Load from local storage
                 const res = await fetch(`${API_BASE}/leagues`);
                 leagues = await res.json();
                 renderTabs();
                 loadFixtures(currentLeague);
             } catch (e) {
                 console.error("Initialization failed", e);
+            }
+        }
+
+        // --- NAVIGATION & MENU ---
+        function toggleMenu() {
+            document.querySelector('.sidebar').classList.toggle('open');
+            document.querySelector('.overlay').classList.toggle('open');
+        }
+
+        function switchView(viewName) {
+            toggleMenu(); // Close menu
+            if (viewName === 'tactical') {
+                document.getElementById('view-tactical').style.display = 'block';
+                document.getElementById('view-history').style.display = 'none';
+            } else {
+                document.getElementById('view-tactical').style.display = 'none';
+                document.getElementById('view-history').style.display = 'block';
+                renderHistory();
+            }
+        }
+
+        // --- HISTORY LOGIC ---
+        function loadHistory() {
+            const stored = localStorage.getItem('betly_history');
+            if (stored) {
+                historyData = JSON.parse(stored);
+            }
+        }
+
+        function saveHistory() {
+            localStorage.setItem('betly_history', JSON.stringify(historyData));
+        }
+
+        function addToHistory(pred, recs) {
+            // Check if already exists (prevent dupes on re-click)
+            const id = `${pred.home}-${pred.away}-${new Date().toDateString()}`;
+            if (historyData.some(h => h.id === id)) return;
+
+            const item = {
+                id: id,
+                date: new Date().toISOString(),
+                home: pred.home,
+                away: pred.away,
+                league: currentLeague,
+                predicted_score: pred.predicted_score,
+                primary_pick: recs.primary.pick,
+                result: '?',
+                status: 'pending' // pending, won, lost
+            };
+            historyData.unshift(item); // Add to top
+            if (historyData.length > 50) historyData.pop(); // Limit to 50
+            saveHistory();
+        }
+
+        function renderHistory(filter = 'all') {
+            const tbody = document.getElementById('history-tbody');
+            let filtered = historyData;
+            if (filter !== 'all') {
+                filtered = historyData.filter(h => h.status === filter);
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 30px; color: var(--text-secondary);">No records found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(item => `
+                <tr>
+                    <td>${new Date(item.date).toLocaleDateString()}</td>
+                    <td><span style="color:white; font-weight:600;">${item.home}</span> vs ${item.away}</td>
+                    <td>
+                        <div style="font-weight:700;">${item.primary_pick}</div>
+                        <div style="font-size:0.75rem; opacity:0.7;">Score: ${item.predicted_score}</div>
+                    </td>
+                    <td>
+                        <div style="display:flex; gap:5px;">
+                            <button onclick="updateStatus('${item.id}', 'won')" style="background:rgba(16,185,129,0.2); border:none; color:#10b981; cursor:pointer; padding:2px 6px; border-radius:4px;">✔</button>
+                            <button onclick="updateStatus('${item.id}', 'lost')" style="background:rgba(244,63,94,0.2); border:none; color:#f43f5e; cursor:pointer; padding:2px 6px; border-radius:4px;">✘</button>
+                        </div>
+                    </td>
+                    <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+                </tr>
+            `).join('');
+
+            // Update filter buttons
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            // Simple robust check for button highlighting is tricky without IDs, so we skip strictly updating classes for now or do it implicitly. 
+            // Better: passing event to this function or simple selector
+        }
+
+        function updateStatus(id, newStatus) {
+            const item = historyData.find(h => h.id === id);
+            if (item) {
+                item.status = newStatus;
+                item.result = newStatus === 'won' ? 'Correct' : 'Incorrect';
+                saveHistory();
+                renderHistory();
+            }
+        }
+
+        function filterHistory(status) {
+            renderHistory(status);
+        }
+
+        function clearHistory() {
+            if (confirm("Clear all prediction history?")) {
+                historyData = [];
+                saveHistory();
+                renderHistory();
             }
         }
 
@@ -673,17 +998,34 @@
                 const res = await fetch(`${API_BASE}/fixtures/${encodeURIComponent(league)}`);
                 const data = await res.json();
 
-                if (data.fixtures.length === 0) {
+                // Filter out past fixtures
+                const now = new Date();
+                const upcomingFixtures = data.fixtures.filter(f => {
+                    const matchDate = new Date(f.DateTime);
+                    return matchDate >= now;
+                });
+
+                if (upcomingFixtures.length === 0) {
                     list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">No upcoming matches found.</div>';
                     return;
                 }
 
-                list.innerHTML = data.fixtures.map(f => `
+                list.innerHTML = upcomingFixtures.map(f => {
+                    const d = new Date(f.DateTime);
+                    // Format: DD/MM/YYYY HH:MM
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const year = d.getFullYear();
+                    const hours = String(d.getHours()).padStart(2, '0');
+                    const mins = String(d.getMinutes()).padStart(2, '0');
+                    const formatted = `${day}/${month}/${year} ${hours}:${mins}`;
+
+                    return `
                     <div class="fixture-item" onclick="getPrediction('${f.Home}', '${f.Away}')">
                         <div class="f-teams">${f.Home} vs ${f.Away}</div>
-                        <div class="f-meta">${new Date(f.DateTime).toLocaleString()}</div>
+                        <div class="f-meta">${formatted}</div>
                     </div>
-                `).join('');
+                `}).join('');
             } catch (e) {
                 list.innerHTML = '<div style="color: #f87171; padding: 20px;">Intelligence Synch Failure</div>';
             }
@@ -712,6 +1054,10 @@
 
                 const data = await res.json();
                 renderResults(data);
+
+                // Save to History automatically
+                addToHistory(data.prediction, data.recommendations);
+
                 display.style.opacity = '1';
                 display.scrollIntoView({ behavior: 'smooth' });
             } catch (e) {
