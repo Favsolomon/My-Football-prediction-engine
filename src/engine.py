@@ -122,10 +122,50 @@ class MatchPredictor:
             "h_xp": h_xp, "a_xp": a_xp, "avg_goals": np.mean(h_sims + a_sims)
         }
 
-    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg, league_table=None, elo=None, is_ucl=False):
+        return atk_strength, def_strength, pedigree, squad_val, clinical_idx
+
+    def get_venue_form(self, team, df, is_home):
+        """
+        Analyzes performance specifically at the relevant venue (Home or Away).
+        Returns: (avg_goals_scored, avg_goals_conceded, consistency_score)
+        """
+        if df.empty: return 1.0, 1.0, 1.0
+        
+        # Filter for recent games at this specific venue
+        if is_home:
+            venue_games = df[df['Home'] == team].dropna(subset=['Score']).tail(5)
+            if venue_games.empty: return 1.5, 1.0, 1.0 # Default assumption
+            
+            goals_for = venue_games['Score'].apply(lambda x: int(x.split('-')[0]))
+            goals_against = venue_games['Score'].apply(lambda x: int(x.split('-')[1]))
+        else:
+            venue_games = df[df['Away'] == team].dropna(subset=['Score']).tail(5)
+            if venue_games.empty: return 1.0, 1.5, 1.0 # Default assumption
+            
+            goals_for = venue_games['Score'].apply(lambda x: int(x.split('-')[1]))
+            goals_against = venue_games['Score'].apply(lambda x: int(x.split('-')[0]))
+            
+        avg_gf = goals_for.mean()
+        avg_ga = goals_against.mean()
+        
+        # Consistency: Standard Deviation of Goal Difference (Low std dev = High Consistency)
+        # We invert it so higher score = more consistent
+        gd_std = (goals_for - goals_against).std()
+        consistency = 1.0
+        if not np.isnan(gd_std):
+            # Scale: 0.0 std (perfectly consistent) -> 1.1x multiplier
+            # 3.0 std (very erratic) -> 0.9x multiplier
+            consistency = max(0.9, min(1.1, 1.1 - (gd_std * 0.06)))
+            
+        return avg_gf, avg_ga, consistency
+
+    def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg, league_table=None, elo=None, is_ucl=False, own_venue_stats=None, opponent_venue_stats=None):
         """Calculates strength using Elo-weighted xG and context-aware Multipliers."""
         played = df.dropna(subset=['xG', 'xG.1'])
+        
+        # 1. Overall Form (Last 5 Games Anywhere)
         team_matches = played[(played['Home'] == team) | (played['Away'] == team)].tail(5)
+        
         clinical_idx = 1.0
         
         if is_ucl:
@@ -134,17 +174,19 @@ class MatchPredictor:
                 # Fallback to importing from config if not on self (Senior failsafe)
                 from .config import LEAGUE_COEFFICIENTS
                 coeff = LEAGUE_COEFFICIENTS.get(team, 0.85)
-            
             pedigree = UCL_PEDIGREE.get(team, 1.0)
             squad_val = SQUAD_VALUE_INDEX.get(team, 1.0)
         else:
             coeff = 1.0
             pedigree = 1.0
             squad_val = 1.0
+            
+        # Calculate Overall Metrics
+        team_avg_atk_overall = 0
+        team_avg_def_overall = 1.0
+        momentum_multiplier = 1.0
         
-        if team_matches.empty:
-            atk_strength, def_strength = 1.0, 1.0
-        else:
+        if not team_matches.empty:
             avg_league_elo = np.mean(list(elo.values())) if elo else 1500
             atk_vals, def_vals, weight_array = [], [], []
             
@@ -157,19 +199,18 @@ class MatchPredictor:
                 r_weight = (i + 1) / len(team_matches)
                 total_weight = q_weight * r_weight
                 
-                if is_team_home:
-                    atk_vals.append(row['xG'])
-                    def_vals.append(row['xG.1'])
-                else:
-                    atk_vals.append(row['xG.1'])
-                    def_vals.append(row['xG'])
+                # Check actual production
+                prod_atk = row['xG'] if is_team_home else row['xG.1']
+                prod_def = row['xG.1'] if is_team_home else row['xG']
+                
+                atk_vals.append(prod_atk)
+                def_vals.append(prod_def)
                 weight_array.append(total_weight)
                     
-            team_avg_atk = np.average(atk_vals, weights=weight_array) if atk_vals else 0
-            team_avg_def = np.average(def_vals, weights=weight_array) if def_vals else 1.0
+            team_avg_atk_overall = np.average(atk_vals, weights=weight_array) if atk_vals else 0
+            team_avg_def_overall = np.average(def_vals, weights=weight_array) if def_vals else 1.0
             
             # --- MOMENTUM FACTOR (Trajectory Analysis) ---
-            momentum_multiplier = 1.0
             if len(atk_vals) >= 3:
                 try:
                     # Calculate slope of offensive production (recent xG)
@@ -181,10 +222,7 @@ class MatchPredictor:
                     elif slope > 0.05: momentum_multiplier = 1.03  # Slight uptrend
                     elif slope < -0.15: momentum_multiplier = 0.94 # Sharp decline (Collapsing)
                     elif slope < -0.05: momentum_multiplier = 0.97 # Slight decline
-                    print(f"Momentum Analysis for {team}: Slope={slope:.4f}, Multiplier={momentum_multiplier:.2f}")
-                except Exception as e:
-                    print(f"Momentum Calculation Error for {team}: {e}")
-                    pass
+                except: pass
             
             # Clinical Factor (xG Conversion Efficiency)
             total_actual = 0
@@ -196,39 +234,87 @@ class MatchPredictor:
                     total_actual += hs if is_team_h else ascore
                     total_expected += row['xG'] if is_team_h else row['xG.1']
             
-            clinical_idx = 1.0
             if total_expected > 0:
                 eff = total_actual / total_expected
                 # smoothed impact: 25% of the deviation from 1.0, capped at +/- 8%
                 clinical_idx = 1.0 + (eff - 1.0) * 0.25
                 clinical_idx = max(0.92, min(clinical_idx, 1.08))
-                print(f"Clinical Analysis for {team}: Eff={eff:.2f}, Multiplier={clinical_idx:.2f}")
-            
-            if is_home:
-                atk_strength = (team_avg_atk / avg_home_xg) * coeff
-                def_strength = (team_avg_def / avg_away_xg) * (2.0 - coeff)
-            else:
-                atk_strength = (team_avg_atk / avg_away_xg) * coeff
-                def_strength = (team_avg_def / avg_home_xg) * (2.0 - coeff)
-            
-            atk_strength *= clinical_idx
-            atk_strength *= momentum_multiplier
-            atk_strength *= (pedigree * squad_val)
-            def_strength /= (pedigree * squad_val)
 
+        # --- BLENDING LOGIC: Overall vs Venue Specific ---
+        # If we have Venue Stats (Last 5 Home/Away), we should blend them.
+        # Rationale: "Recent form tells momentum, Venue form tells capability."
+        # We give significant weight (e.g., 60%) to Venue Performance for precision.
+        
+        team_avg_atk = team_avg_atk_overall
+        team_avg_def = team_avg_def_overall
+
+        if own_venue_stats:
+            v_gf, v_ga, _ = own_venue_stats
+            
+            # Blend: 40% Recent Overall, 60% Recent Venue
+            # Using Goals for Venue vs xG for Overall? 
+            # Ideally normalized, but GF/xG are roughly comparable in scale.
+            
+            team_avg_atk = (team_avg_atk_overall * 0.4) + (v_gf * 0.6)
+            team_avg_def = (team_avg_def_overall * 0.4) + (v_ga * 0.6)
+        
+        # Recalculate basic strengths
+        if is_home:
+            atk_strength = (team_avg_atk / avg_home_xg) * coeff
+            def_strength = (team_avg_def / avg_away_xg) * (2.0 - coeff)
+        else:
+            atk_strength = (team_avg_atk / avg_away_xg) * coeff
+            def_strength = (team_avg_def / avg_home_xg) * (2.0 - coeff)
+            
+        # Apply Clinical Index and Momentum Multiplier to the blended strength
+        atk_strength *= clinical_idx
+        atk_strength *= momentum_multiplier
+
+        # Apply Pedigree/Squad Value
+        atk_strength *= (pedigree * squad_val)
+        def_strength /= (pedigree * squad_val)
+
+        # --- RELATIVE VENUE ANALYSIS (Matchup Specific) ---
+        venue_multiplier = 1.0
+        
+        # Apply Consistency (Self)
+        if own_venue_stats:
+             _, _, v_consist = own_venue_stats
+             atk_strength *= v_consist
+        
+        if opponent_venue_stats and own_venue_stats:
+            v_gf, _, _ = own_venue_stats
+            _, opp_v_ga, _ = opponent_venue_stats
+            
+            # Matchup Logic: My Venue Attack vs Opponent Venue Defense
+            if is_home:
+                # Home Fortress Logic (remains strong as it's crowd/familiarity driven)
+                if v_gf > 1.8 and opp_v_ga > 1.8:
+                    venue_multiplier = 1.12 # Fortress exploiting weakness
+                elif v_gf < 1.0 and opp_v_ga < 1.0:
+                    venue_multiplier = 0.90 # Stoppage expected
+            else:
+                # Away Team Logic (Dampened as per user feedback: Travel fatigue is minimal)
+                # We focus purely on tactical disadvantage of being away, not fatigue.
+                if v_gf > 1.6 and opp_v_ga > 1.6: 
+                    venue_multiplier = 1.04 # Competent visitor (Reduced from 1.08)
+                elif v_gf < 0.8:
+                    venue_multiplier = 0.96 # Poor away form (Reduced penalty from 0.92)
+            
+            atk_strength *= venue_multiplier
+            
+        # ... (League Table Logic remains same)
         if league_table and team in league_table:
             stats = league_table[team]
-            # Steeper rank-based scaling (Rank 1: ~1.13x, Rank 20: ~0.85x)
             rank_boost = 1.15 - (stats['rank'] / 20 * 0.3) 
             atk_strength *= rank_boost
             
-            # Tiered Quality Adjustments
             if stats['rank'] <= 4:
-                atk_strength *= 1.10  # Elite offensive efficiency
-                def_strength *= 0.88  # Elite defensive discipline (lower is better)
+                atk_strength *= 1.10
+                def_strength *= 0.88
             elif stats['rank'] >= 18:
-                atk_strength *= 0.85  # Bottom-tier finishing struggle
-                def_strength *= 1.25  # Relegation-zone defensive fragility (higher is worse)
+                atk_strength *= 0.85
+                def_strength *= 1.25
             
             if is_home and stats['h_gp'] > 0:
                 h_ppg = stats['h_pts'] / stats['h_gp']
@@ -237,9 +323,9 @@ class MatchPredictor:
                 a_ppg = stats['a_pts'] / stats['a_gp']
                 if a_ppg > 1.9: atk_strength *= 1.08 # Dominant away force
         
-        # Guard rails for stability
-        atk_strength = max(0.5, min(atk_strength, 1.8))
-        def_strength = max(0.5, min(def_strength, 1.8))
+        # Guard rails
+        atk_strength = max(0.5, min(atk_strength, 2.0)) # Increased cap to 2.0 to allow for high performers
+        def_strength = max(0.4, min(def_strength, 2.0))
                 
         return atk_strength, def_strength, pedigree, squad_val, clinical_idx
 
@@ -271,8 +357,22 @@ class MatchPredictor:
         league_table = self.get_league_table(df)
         elo = self.calculate_elo(df)
 
-        h_atk, h_def, h_ped, h_val, h_clin = self.calculate_strength(home_team, df, True, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
-        a_atk, a_def, a_ped, a_val, a_clin = self.calculate_strength(away_team, df, False, avg_h_xg, avg_a_xg, league_table, elo, is_ucl)
+        # Pre-fetch Venue Stats for Cross-Reference
+        h_v_gf, h_v_ga, h_v_consist = self.get_venue_form(home_team, df, True)
+        a_v_gf, a_v_ga, a_v_consist = self.get_venue_form(away_team, df, False)
+
+        # Pass Opponent's Venue Stats AND Own Venue Stats to calculation
+        h_atk, h_def, h_ped, h_val, h_clin = self.calculate_strength(
+            home_team, df, True, avg_h_xg, avg_a_xg, league_table, elo, is_ucl, 
+            own_venue_stats=(h_v_gf, h_v_ga, h_v_consist),
+            opponent_venue_stats=(a_v_gf, a_v_ga, a_v_consist)
+        )
+        
+        a_atk, a_def, a_ped, a_val, a_clin = self.calculate_strength(
+            away_team, df, False, avg_h_xg, avg_a_xg, league_table, elo, is_ucl,
+            own_venue_stats=(a_v_gf, a_v_ga, a_v_consist),
+            opponent_venue_stats=(h_v_gf, h_v_ga, h_v_consist)
+        )
 
         l_home = h_atk * a_def * avg_h_xg * 1.08
         l_away = a_atk * h_def * avg_a_xg * 0.92

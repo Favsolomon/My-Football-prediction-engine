@@ -305,6 +305,7 @@
             const loading = document.getElementById('loading-state');
             const content = document.getElementById('result-content');
             const noBet = document.getElementById('no-bet-state');
+            const legsContainer = content.querySelector('.legs-container');
 
             // Get or Create Banner
             let statusBanner = document.getElementById('status-banner');
@@ -312,79 +313,117 @@
                 statusBanner = document.createElement('div');
                 statusBanner.id = 'status-banner';
                 statusBanner.className = 'status-banner';
-                // Insert as first child of content
                 content.insertBefore(statusBanner, content.firstChild);
             }
 
+            // Initial State: Loading
             loading.style.display = 'block';
             content.style.display = 'none';
             noBet.style.display = 'none';
             statusBanner.style.display = 'none';
+            
+            // Shared state logic
+            let topPicksLoaded = false;
+            let accaLoaded = false;
 
-            try {
-                // 1. Fetch Top Picks (Fast)
-                // Fire request but don't await yet if we want true parallel, 
-                // but we want to render them ASAP.
-                const topRes = await fetch(`${API_BASE}/top-picks`);
-                const topData = await topRes.json();
+            // 1. Trigger requests in parallel
+            const topPicksPromise = fetch(`${API_BASE}/top-picks`)
+                .then(r => {
+                    if (!r.ok) throw new Error("Top Picks Failed");
+                    return r.json();
+                })
+                .then(data => {
+                    if (data.top_picks && data.top_picks.length > 0) {
+                        topPicksLoaded = true;
+                        // Render Top Picks immediately
+                        loading.style.display = 'none';
+                        content.style.display = 'block';
+                        renderTopPicks(data.top_picks, "Analyzing global markets for optimal accumulator...");
+                        
+                        // Show "Optimizing" banner if acca isn't ready
+                        if (!accaLoaded) {
+                            statusBanner.style.display = 'block';
+                            statusBanner.style.background = 'rgba(16, 185, 129, 0.1)';
+                            statusBanner.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                            statusBanner.innerHTML = `
+                                <div class="status-icon">🔄</div>
+                                <div class="status-text">
+                                    <strong>Analyst Intelligence Active</strong><br>
+                                    Top Picks loaded. Optimizing 3-Pillar Accumulator...
+                                </div>
+                             `;
+                        }
+                        return data.top_picks; // Pass to next step if needed
+                    }
+                    return [];
+                })
+                .catch(e => {
+                    console.warn("Top Picks Background Failure:", e);
+                    return [];
+                });
 
-                if (topData.top_picks && topData.top_picks.length > 0) {
-                    renderTopPicks(topData.top_picks, "Analyzing global markets for optimal accumulator...");
-                    loading.style.display = 'none';
+            const accaPromise = fetch(`${API_BASE}/accumulator`)
+                .then(r => {
+                     // 500 errors on acca endpoint shouldn't kill the page if we have top picks
+                     if (!r.ok) throw new Error("Acca Endpoint Failed");
+                     return r.json();
+                })
+                .then(data => {
+                    accaLoaded = true;
+                    return data;
+                })
+                .catch(e => {
+                    console.error("Acca Calculation Error:", e);
+                    return { error: true, message: e.message };
+                });
+
+            // 2. Handle Accumulator arrival (likely later)
+            const accaData = await accaPromise;
+            const existingTopPicks = await topPicksPromise; // Already handled rendering above
+
+            // State Resolution
+            loading.style.display = 'none'; // Ensure loading is off
+
+            if (accaData.accumulator) {
+                // Success: Acca found
+                statusBanner.style.display = 'none';
+                content.style.display = 'block';
+                renderAccumulator(accaData, existingTopPicks);
+            
+            } else {
+                // Failure: No Acca found (or Error)
+                
+                if (existingTopPicks.length > 0) {
+                    // Scenario: We have Top Picks, but Acca failed
                     content.style.display = 'block';
-
-                    // Show "Optimizing" banner
+                    
                     statusBanner.style.display = 'block';
-                    statusBanner.style.background = 'rgba(16, 185, 129, 0.1)';
-                    statusBanner.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusBanner.style.background = 'rgba(255, 215, 0, 0.15)';
+                    statusBanner.style.border = '1px solid rgba(255, 215, 0, 0.3)';
                     statusBanner.innerHTML = `
-                        <div class="status-icon">🔄</div>
+                        <div class="status-icon">⚠️</div>
                         <div class="status-text">
-                            <strong>Analyst Intelligence Active</strong><br>
-                            Top Picks loaded. Optimizing 3-Pillar Accumulator...
+                            <strong>Market Efficiency Alert</strong><br>
+                            Stable accumulator not found. Top picks maintained.
                         </div>
                      `;
-                }
+                     
+                    // Update rationale if specific message exists
+                    const rationaleBox = content.querySelector('.rationale-box');
+                    if (rationaleBox && accaData.message) {
+                        rationaleBox.textContent = `"${accaData.message}"`;
+                    } else if (rationaleBox && accaData.error) {
+                        rationaleBox.textContent = `"Accumulator optimization timed out. Only individual picks available."`;
+                    }
 
-                // 2. Fetch Accumulator (Slow)
-                const accaRes = await fetch(`${API_BASE}/accumulator`);
-                const accaData = await accaRes.json();
-
-                if (accaData.accumulator) {
-                    statusBanner.style.display = 'none';
-                    // Render Acca and append Top Picks below
-                    renderAccumulator(accaData, topData.top_picks);
                 } else {
-                    // Acca failed.
-                    if (topData.top_picks && topData.top_picks.length > 0) {
-                        // Update banner to "Market Efficiency"
-                        statusBanner.style.display = 'block';
-                        statusBanner.style.background = 'rgba(255, 215, 0, 0.15)';
-                        statusBanner.style.border = '1px solid rgba(255, 215, 0, 0.3)';
-                        statusBanner.innerHTML = `
-                            <div class="status-icon">⚠️</div>
-                            <div class="status-text">
-                                <strong>Market Efficiency Alert</strong><br>
-                                Stable accumulator not found. Top picks maintained.
-                            </div>
-                         `;
-                        // Ensure text is updated
-                        const rationale = accaData.statistical_rationale || "Market too efficient for parlay.";
-                        const rationaleBox = content.querySelector('.rationale-box');
-                        if (rationaleBox) rationaleBox.textContent = `"${rationale}"`;
-                    } else {
-                        // Nothing found at all
-                        loading.style.display = 'none';
-                        content.style.display = 'none';
-                        noBet.style.display = 'block';
+                    // Scenario: Total Failure (No Top Picks AND No Acca)
+                    content.style.display = 'none';
+                    noBet.style.display = 'block';
+                    if (accaData.error) {
+                         noBet.innerHTML = '<div class="no-bet-title">SYNC FAILURE</div><p>Intelligence node is currently unreachable.</p>';
                     }
                 }
-
-            } catch (e) {
-                console.error("Quant Load Error", e);
-                loading.style.display = 'none';
-                noBet.innerHTML = '<div class="no-bet-title">SYNC FAILURE</div><p>Intelligence node is currently unreachable.</p>';
-                noBet.style.display = 'block';
             }
         }
 
