@@ -2,6 +2,7 @@ const API_BASE = '/api';
 let currentLeague = 'Premier League';
 let leagues = [];
 let historyData = [];
+let globalFixtures = [];
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', init);
@@ -9,9 +10,8 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
     try {
         loadHistory(); // Load from local storage
-        
-        // OPTIMIZATION: Parallel data fetching
-        // We fetch leagues and the default league fixtures simultaneously
+
+        // ⚡ SPEED GAIN: Only wait for the essential UI components
         const [leaguesRes, fixturesRes] = await Promise.all([
             fetch(`${API_BASE}/leagues`),
             fetch(`${API_BASE}/fixtures/${encodeURIComponent(currentLeague)}`)
@@ -19,15 +19,29 @@ async function init() {
 
         leagues = await leaguesRes.json();
         renderTabs();
-        
-        // Handle fixtures response
+
         const fixturesData = await fixturesRes.json();
         renderFixtures(fixturesData);
 
+        // 🔍 DEFERRED LOADING: Fetch search data in background after UI is visible
+        fetchGlobalFixtures();
+
     } catch (e) {
         console.error("Initialization failed", e);
-        document.getElementById('fixture-list').innerHTML = 
+        document.getElementById('fixture-list').innerHTML =
             '<div style="color: #f87171; padding: 20px;">Intelligence Synch Failure</div>';
+    }
+}
+
+async function fetchGlobalFixtures() {
+    try {
+        console.log("Syncing global search database in background...");
+        const res = await fetch(`${API_BASE}/fixtures/all`);
+        const data = await res.json();
+        globalFixtures = data.fixtures || [];
+        console.log(`Global search database synced: ${globalFixtures.length} matches indexed.`);
+    } catch (e) {
+        console.warn("Global search sync failed, search may be limited to current league.", e);
     }
 }
 
@@ -42,7 +56,7 @@ function switchView(viewName) {
     if (viewName === 'tactical') {
         document.getElementById('view-tactical').style.display = 'block';
         document.getElementById('view-history').style.display = 'none';
-        
+
         // Re-render fixtures if needed or just show the view
         // The view state is preserved in DOM, so just switching display is fine
     } else {
@@ -88,7 +102,7 @@ function addToHistory(pred, recs) {
 function renderHistory(filter = 'all') {
     const tbody = document.getElementById('history-tbody');
     if (!tbody) return;
-    
+
     let filtered = historyData;
     if (filter !== 'all') {
         filtered = historyData.filter(h => h.status === filter);
@@ -116,7 +130,7 @@ function renderHistory(filter = 'all') {
             <td><span class="status-badge status-${item.status}">${item.status}</span></td>
         </tr>
     `).join('');
-    
+
     // Update filter buttons
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     // Ideally we'd set active class on the clicked button based on the filter argument
@@ -148,7 +162,7 @@ function clearHistory() {
 function renderTabs() {
     const container = document.getElementById('league-tabs');
     if (!container) return;
-    
+
     container.innerHTML = leagues.map(l => `
         <div class="tab ${l.name === currentLeague ? 'active' : ''}" onclick="switchLeague('${l.name}')">
             ${l.name}
@@ -176,9 +190,29 @@ async function loadFixtures(league) {
     }
 }
 
-function renderFixtures(data) {
+function handleSearch(query) {
     const list = document.getElementById('fixture-list');
-    
+    const q = query.toLowerCase().trim();
+
+    // If search is empty, go back to currently selected league tab
+    if (!q) {
+        loadFixtures(currentLeague);
+        return;
+    }
+
+    // Filter global fixtures by team name or league name
+    const filtered = globalFixtures.filter(f =>
+        f.Home.toLowerCase().includes(q) ||
+        f.Away.toLowerCase().includes(q) ||
+        (f.LeagueName && f.LeagueName.toLowerCase().includes(q))
+    );
+
+    renderFixtures({ fixtures: filtered }, true); // pass true to indicate it's a search result
+}
+
+function renderFixtures(data, isSearchResult = false) {
+    const list = document.getElementById('fixture-list');
+
     // Filter out past fixtures
     const now = new Date();
     const upcomingFixtures = data.fixtures.filter(f => {
@@ -187,7 +221,7 @@ function renderFixtures(data) {
     });
 
     if (upcomingFixtures.length === 0) {
-        list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">No upcoming matches found.</div>';
+        list.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${isSearchResult ? 'No matches match your search.' : 'No upcoming matches found.'}</div>`;
         return;
     }
 
@@ -201,8 +235,12 @@ function renderFixtures(data) {
         const mins = String(d.getMinutes()).padStart(2, '0');
         const formatted = `${day}/${month}/${year} ${hours}:${mins}`;
 
+        // Show league name badge if it's a search result from various leagues
+        const leagueBadge = isSearchResult && f.LeagueName ? `<div style="font-size: 0.65rem; color: var(--accent-blue); font-weight: 800; text-transform: uppercase; margin-bottom: 2px;">${f.LeagueName}</div>` : '';
+
         return `
-        <div class="fixture-item" onclick="getPrediction('${f.Home}', '${f.Away}')">
+        <div class="fixture-item" onclick="getPrediction('${f.Home}', '${f.Away}', '${f.LeagueName || currentLeague}')">
+            ${leagueBadge}
             <div class="f-teams">${f.Home} vs ${f.Away}</div>
             <div class="f-meta">${formatted}</div>
         </div>
@@ -210,7 +248,8 @@ function renderFixtures(data) {
 }
 
 
-async function getPrediction(home, away) {
+async function getPrediction(home, away, leagueOverride = null) {
+    const leagueToUse = leagueOverride || currentLeague;
     const display = document.getElementById('results-display');
     display.style.display = 'block';
     display.style.opacity = '0.5';
@@ -222,7 +261,7 @@ async function getPrediction(home, away) {
         const res = await fetch(api_url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ home_team: home, away_team: away, league: currentLeague })
+            body: JSON.stringify({ home_team: home, away_team: away, league: leagueToUse })
         });
 
         if (!res.ok) {
@@ -256,7 +295,7 @@ function renderResults(data) {
     // Header
     const homeLogo = pred.home_logo || '';
     const awayLogo = pred.away_logo || '';
-    
+
     document.getElementById('match-header').innerHTML = `
         <div class="team-box">
             <img src="${homeLogo}" class="team-logo" onerror="this.src='https://via.placeholder.com/80?text=${pred.home[0]}'">

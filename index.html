@@ -40,6 +40,12 @@
 
         <!-- View: Tactical Core (Main) -->
         <div id="view-tactical">
+            <div class="search-container">
+                <input type="text" id="global-search" placeholder="Search any team or league..."
+                    oninput="handleSearch(this.value)">
+                <div class="search-icon">🔍</div>
+            </div>
+
             <nav class="tabs" id="league-tabs">
                 <!-- Tabs injected via JS -->
             </nav>

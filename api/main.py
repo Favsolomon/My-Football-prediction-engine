@@ -49,6 +49,47 @@ class MatchPredictionRequest(BaseModel):
     league: str
     season: str = "2025"
 
+# --- Prediction Cache (Global Search) ---
+GLOBAL_FIXTURES_CACHE = {
+    "data": None,
+    "timestamp": None
+}
+
+@app.get("/api/fixtures/all")
+async def get_all_fixtures(season: str = "2025"):
+    # Return cached data if valid (10 minutes)
+    now = datetime.now()
+    if GLOBAL_FIXTURES_CACHE["data"] and GLOBAL_FIXTURES_CACHE["timestamp"]:
+        elapsed = (now - GLOBAL_FIXTURES_CACHE["timestamp"]).total_seconds()
+        if elapsed < 600:
+            return GLOBAL_FIXTURES_CACHE["data"]
+
+    def fetch_league(name):
+        try:
+            _, data = DataService.preload_competition_context(name, season)
+            upcoming = data.get("upcoming", pd.DataFrame())
+            if not upcoming.empty:
+                fixtures = upcoming.replace({np.nan: None}).to_dict(orient="records")
+                # Add league name to each fixture for searched results context
+                for f in fixtures:
+                    f['LeagueName'] = name
+                return fixtures
+        except:
+            return []
+        return []
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(fetch_league, LEAGUES_UNDERSTAT.keys()))
+    
+    # Flatten the list of lists
+    all_fixtures = [item for sublist in results for item in sublist]
+    
+    # Store in cache
+    GLOBAL_FIXTURES_CACHE["data"] = {"fixtures": all_fixtures}
+    GLOBAL_FIXTURES_CACHE["timestamp"] = datetime.now()
+    
+    return GLOBAL_FIXTURES_CACHE["data"]
+
 @app.get("/")
 @app.get("/index.html")
 async def read_index():
