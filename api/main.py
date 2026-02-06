@@ -28,6 +28,12 @@ CANDIDATES_CACHE = {
 
 app = FastAPI(title="Betly AI API")
 
+from pathlib import Path
+
+# Mount static files
+static_dir = Path(__file__).resolve().parent.parent / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 # Enable CORS for frontend development
 app.add_middleware(
     CORSMiddleware,
