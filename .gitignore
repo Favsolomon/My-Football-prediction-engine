@@ -18,6 +18,7 @@ test_*.py
 find_ucl_key.py
 inspect_team_data.py
 verify_ucl_fix.py
+run_dev.bat
 
 # OS
 .DS_Store
