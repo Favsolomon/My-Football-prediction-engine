@@ -247,6 +247,20 @@ h1 {
     margin: 0 auto;
 }
 
+.team-rank {
+    font-size: 0.75rem;
+    color: var(--accent-glow);
+    font-weight: 800;
+    margin-top: 8px;
+    display: inline-block;
+    padding: 3px 10px;
+    background: rgba(96, 165, 250, 0.1);
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    border-radius: 8px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
 .vs-divider {
     font-size: 1.2rem;
     font-weight: 300;

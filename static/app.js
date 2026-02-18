@@ -300,11 +300,13 @@ function renderResults(data) {
         <div class="team-box">
             <img src="${homeLogo}" class="team-logo" onerror="this.src='https://via.placeholder.com/80?text=${pred.home[0]}'">
             <div class="team-name">${pred.home}</div>
+            <div class="team-rank">#${pred.rank_h || 'N/A'} RANK</div>
         </div>
         <div class="vs-divider">VS</div>
         <div class="team-box">
             <img src="${awayLogo}" class="team-logo" onerror="this.src='https://via.placeholder.com/80?text=${pred.away[0]}'">
             <div class="team-name">${pred.away}</div>
+            <div class="team-rank">#${pred.rank_a || 'N/A'} RANK</div>
         </div>
     `;
 
