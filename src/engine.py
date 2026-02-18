@@ -5,14 +5,15 @@ import pandas as pd
 from .config import UCL_PEDIGREE, SQUAD_VALUE_INDEX
 
 def poisson_pmf(k_array, lam):
-    """Native numpy implementation of Poisson PMF to avoid scipy dependency."""
-    # P(k; lam) = lam^k * e^-lam / k!
-    # Using small k (0-9) so factorials are trivial.
-    factorials = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880])
+    """Native numpy implementation of Poisson PMF to avoid scipy dependency.
+    Covers k=0..11 for a 12×12 probability matrix, ensuring negligible
+    probability mass is lost even when λ > 3.5."""
+    # FIX 1: Extended factorials to k=0..11
+    factorials = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800])
     k_array = np.array(k_array, dtype=int)
     
-    # Safe guard for larger k if ever used, but we only use range(10)
-    facts = np.array([factorials[k] if k < 10 else np.prod(np.arange(1, k+1)) for k in k_array])
+    # Safe guard for larger k if ever used, but we only use range(12)
+    facts = np.array([factorials[k] if k < 12 else np.prod(np.arange(1, k+1)) for k in k_array])
     
     return (np.power(lam, k_array) * np.exp(-lam)) / facts
 
@@ -72,7 +73,8 @@ class MatchPredictor:
         """Calculates a simple Elo rating for all teams based on match results."""
         elo = {team: 1500 for team in pd.concat([df['Home'], df['Away']]).unique()}
         played = df.dropna(subset=['Score'])
-        K = 32
+        # FIX 2: Reduced K from 32 to 20 for more stable Elo ratings
+        K = 20
         
         for _, row in played.iterrows():
             try:
@@ -96,33 +98,18 @@ class MatchPredictor:
         return elo
 
     def tau_adjustment(self, x, y, l_h, l_a, rho=-0.1):
-        """Dixon-Coles adjustment function for low-scoring interdependence."""
+        """Dixon-Coles adjustment function for low-scoring interdependence.
+        FIX 3: Returns 1.0 when either λ exceeds 2.0, as the correction
+        was derived for typical goal rates (λ ≈ 1.0–1.6) and is
+        mathematically unsound outside that range."""
+        # FIX 3: Guard against high λ values
+        if l_h > 2.0 or l_a > 2.0:
+            return 1.0
         if x == 0 and y == 0: return 1 - (l_h * l_a * rho)
         elif x == 0 and y == 1: return 1 + (l_h * rho)
         elif x == 1 and y == 0: return 1 + (l_a * rho)
         elif x == 1 and y == 1: return 1 - rho
         return 1.0
-
-    def run_monte_carlo(self, l_h, l_a, iterations=10000):
-        """Runs 10,000 simulations to derive probabilistic outcomes and variance."""
-        h_sims = np.random.poisson(l_h, iterations)
-        a_sims = np.random.poisson(l_a, iterations)
-        
-        results = h_sims - a_sims
-        h_wins = np.sum(results > 0)
-        draws = np.sum(results == 0)
-        a_wins = np.sum(results < 0)
-        
-        # Expected Points (xP)
-        h_xp = (h_wins * 3 + draws * 1) / iterations
-        a_xp = (a_wins * 3 + draws * 1) / iterations
-        
-        return {
-            "h_win": h_wins / iterations, "draw": draws / iterations, "a_win": a_wins / iterations,
-            "h_xp": h_xp, "a_xp": a_xp, "avg_goals": np.mean(h_sims + a_sims)
-        }
-
-        return atk_strength, def_strength, pedigree, squad_val, clinical_idx
 
     def get_venue_form(self, team, df, is_home):
         """
@@ -160,7 +147,12 @@ class MatchPredictor:
         return avg_gf, avg_ga, consistency
 
     def calculate_strength(self, team, df, is_home, avg_home_xg, avg_away_xg, league_table=None, elo=None, is_ucl=False, own_venue_stats=None, opponent_venue_stats=None):
-        """Calculates strength using Elo-weighted xG and context-aware Multipliers."""
+        """Calculates strength using Elo-weighted xG and context-aware multipliers.
+        FIX 4: Venue double-counting removed — base strength uses overall xG only.
+        FIX 5: League table collapsed into single rank_factor formula.
+        FIX 6: Clinical & momentum merged into single form_factor.
+        FIX 7: Pedigree & squad value merged into capped club_quality.
+        FIX 8: Elo quality weight exponent linearised."""
         played = df.dropna(subset=['xG', 'xG.1'])
         
         # 1. Overall Form (Last 5 Games Anywhere)
@@ -184,7 +176,9 @@ class MatchPredictor:
         # Calculate Overall Metrics
         team_avg_atk_overall = 0
         team_avg_def_overall = 1.0
-        momentum_multiplier = 1.0
+        # FIX 6: Store momentum as component, not multiplier
+        momentum_component = 1.0
+        clinical_component = 1.0
         
         if not team_matches.empty:
             avg_league_elo = np.mean(list(elo.values())) if elo else 1500
@@ -195,7 +189,8 @@ class MatchPredictor:
                 opponent = row['Away'] if is_team_home else row['Home']
                 opp_elo = elo.get(opponent, 1500) if elo else 1500
                 
-                q_weight = (opp_elo / avg_league_elo) ** 1.5 
+                # FIX 8: Linear quality weight (exponent 1.0 instead of 1.5)
+                q_weight = opp_elo / avg_league_elo
                 r_weight = (i + 1) / len(team_matches)
                 total_weight = q_weight * r_weight
                 
@@ -211,17 +206,14 @@ class MatchPredictor:
             team_avg_def_overall = np.average(def_vals, weights=weight_array) if def_vals else 1.0
             
             # --- MOMENTUM FACTOR (Trajectory Analysis) ---
+            # FIX 6: Continuous mapping instead of discrete thresholds
             if len(atk_vals) >= 3:
                 try:
-                    # Calculate slope of offensive production (recent xG)
                     x_axis = np.arange(len(atk_vals))
                     slope, _ = np.polyfit(x_axis, atk_vals, 1)
                     
-                    # Sigmoid-style smoothing for momentum
-                    if slope > 0.15: momentum_multiplier = 1.06   # Strong uptrend (Ascending)
-                    elif slope > 0.05: momentum_multiplier = 1.03  # Slight uptrend
-                    elif slope < -0.15: momentum_multiplier = 0.94 # Sharp decline (Collapsing)
-                    elif slope < -0.05: momentum_multiplier = 0.97 # Slight decline
+                    # Continuous: slope of +0.20 → ×1.06, slope of -0.20 → ×0.94
+                    momentum_component = 1.0 + max(-0.06, min(0.06, slope / 0.20 * 0.06))
                 except: pass
             
             # Clinical Factor (xG Conversion Efficiency)
@@ -237,26 +229,12 @@ class MatchPredictor:
             if total_expected > 0:
                 eff = total_actual / total_expected
                 # smoothed impact: 25% of the deviation from 1.0, capped at +/- 8%
-                clinical_idx = 1.0 + (eff - 1.0) * 0.25
-                clinical_idx = max(0.92, min(clinical_idx, 1.08))
+                clinical_component = 1.0 + max(-0.08, min(0.08, (eff - 1.0) * 0.25))
 
-        # --- BLENDING LOGIC: Overall vs Venue Specific ---
-        # If we have Venue Stats (Last 5 Home/Away), we should blend them.
-        # Rationale: "Recent form tells momentum, Venue form tells capability."
-        # We give significant weight (e.g., 60%) to Venue Performance for precision.
-        
+        # FIX 4 (Part 1): No blending — use overall xG directly for base strength.
+        # The venue signal is carried solely by the venue_multiplier block below.
         team_avg_atk = team_avg_atk_overall
         team_avg_def = team_avg_def_overall
-
-        if own_venue_stats:
-            v_gf, v_ga, _ = own_venue_stats
-            
-            # Blend: 40% Recent Overall, 60% Recent Venue
-            # Using Goals for Venue vs xG for Overall? 
-            # Ideally normalized, but GF/xG are roughly comparable in scale.
-            
-            team_avg_atk = (team_avg_atk_overall * 0.4) + (v_gf * 0.6)
-            team_avg_def = (team_avg_def_overall * 0.4) + (v_ga * 0.6)
         
         # Recalculate basic strengths
         if is_home:
@@ -266,21 +244,21 @@ class MatchPredictor:
             atk_strength = (team_avg_atk / avg_away_xg) * coeff
             def_strength = (team_avg_def / avg_home_xg) * (2.0 - coeff)
             
-        # Apply Clinical Index and Momentum Multiplier to the blended strength
-        atk_strength *= clinical_idx
-        atk_strength *= momentum_multiplier
+        # FIX 6: Apply merged form_factor (60% momentum + 40% clinical) once
+        form_factor = 0.60 * momentum_component + 0.40 * clinical_component
+        atk_strength *= form_factor
+        # Keep clinical_idx for the return value so the UI display is unaffected
+        clinical_idx = clinical_component
 
-        # Apply Pedigree/Squad Value
-        atk_strength *= (pedigree * squad_val)
-        def_strength /= (pedigree * squad_val)
+        # FIX 7: Merge Pedigree & Squad Value into single capped club_quality
+        club_quality = max(pedigree, squad_val) * 0.6 + min(pedigree, squad_val) * 0.4
+        club_quality = min(club_quality, 1.25)  # absolute ceiling
+        atk_strength *= club_quality
+        def_strength /= club_quality
 
         # --- RELATIVE VENUE ANALYSIS (Matchup Specific) ---
+        # FIX 4 (Part 2): venue_multiplier is the sole carrier of the venue signal.
         venue_multiplier = 1.0
-        
-        # Apply Consistency (Self)
-        if own_venue_stats:
-             _, _, v_consist = own_venue_stats
-             atk_strength *= v_consist
         
         if opponent_venue_stats and own_venue_stats:
             v_gf, _, _ = own_venue_stats
@@ -300,28 +278,36 @@ class MatchPredictor:
                     venue_multiplier = 1.04 # Competent visitor (Reduced from 1.08)
                 elif v_gf < 0.8:
                     venue_multiplier = 0.96 # Poor away form (Reduced penalty from 0.92)
+        
+        # FIX 4 (Part 2): Consistency modulates venue effect instead of stacking independently
+        if own_venue_stats:
+            _, _, v_consist = own_venue_stats
+            venue_multiplier = 1.0 + (venue_multiplier - 1.0) * v_consist
             
-            atk_strength *= venue_multiplier
+        atk_strength *= venue_multiplier
             
-        # ... (League Table Logic remains same)
+        # FIX 5: Collapsed league table into single rank_factor formula
         if league_table and team in league_table:
             stats = league_table[team]
-            rank_boost = 1.15 - (stats['rank'] / 20 * 0.3) 
-            atk_strength *= rank_boost
+            n_teams = max(len(league_table), 20)
+            rank_factor = 1.15 - (stats['rank'] / n_teams * 0.40)
+            rank_factor = max(0.80, min(1.15, rank_factor))
             
-            if stats['rank'] <= 4:
-                atk_strength *= 1.10
-                def_strength *= 0.88
-            elif stats['rank'] >= 18:
-                atk_strength *= 0.85
-                def_strength *= 1.25
-            
+            # Fold PPG signal smoothly into rank_factor
             if is_home and stats['h_gp'] > 0:
                 h_ppg = stats['h_pts'] / stats['h_gp']
-                if h_ppg > 2.1: atk_strength *= 1.08 # Fortified home ground
+                ppg_adj = (h_ppg - 1.5) / 1.5 * 0.04  # range: approx -0.04 to +0.04
+                rank_factor = max(0.80, min(1.15, rank_factor + ppg_adj))
             elif not is_home and stats['a_gp'] > 0:
                 a_ppg = stats['a_pts'] / stats['a_gp']
-                if a_ppg > 1.9: atk_strength *= 1.08 # Dominant away force
+                ppg_adj = (a_ppg - 1.0) / 1.5 * 0.03
+                rank_factor = max(0.80, min(1.12, rank_factor + ppg_adj))
+            
+            atk_strength *= rank_factor
+            
+            # Symmetric inverse for defense
+            def_rank_factor = 2.0 - rank_factor
+            def_strength *= def_rank_factor
         
         # Guard rails
         atk_strength = max(0.5, min(atk_strength, 2.0)) # Increased cap to 2.0 to allow for high performers
@@ -352,7 +338,10 @@ class MatchPredictor:
         }
 
     def predict_match(self, home_team, away_team, df, is_ucl=False, live_odds=None):
-        """Runs Advanced Analytical Pipeline: Dixon-Coles Correction + Monte Carlo + Market Bias."""
+        """Runs Advanced Analytical Pipeline: Dixon-Coles Correction + Exact Matrix Probabilities.
+        FIX 9:  H2H adjustment applied before matrix build.
+        FIX 10: Market odds no longer contaminate λ values.
+        FIX 11: Monte Carlo replaced with exact analytical probabilities."""
         avg_h_xg, avg_a_xg = self.get_league_stats(df)
         league_table = self.get_league_table(df)
         elo = self.calculate_elo(df)
@@ -377,49 +366,48 @@ class MatchPredictor:
         l_home = h_atk * a_def * avg_h_xg * 1.08
         l_away = a_atk * h_def * avg_a_xg * 0.92
 
-        # 1. Market Sentiment Bias (SUBTLE preference to heavy favorites / goal lines)
-        # User Feedback: Analytical core matters most. These multipliers are refinements, not overrides.
-        if live_odds:
-            try:
-                # Apply subtle bias to Market Favorites
-                if 'h2h' in live_odds:
-                    h_prob = 1/live_odds['h2h'].get('home', 10)
-                    a_prob = 1/live_odds['h2h'].get('away', 10)
-                    
-                    if h_prob > 0.65: l_home *= 1.04 # Slight Market Favorite Refinement (4%)
-                    elif a_prob > 0.60: l_away *= 1.04
-                
-                # Apply subtle bias to Over 1.5 (Minor scoring favor)
-                if 'totals' in live_odds and live_odds['totals'].get('over15', 10) < 1.35:
-                    l_home *= 1.02 # Subtle scoring nudge (2%)
-                    l_away *= 1.02
-            except: pass
+        # FIX 10: Market odds removed from λ calculation.
+        # live_odds is still accepted and passed through in the result dict
+        # for use by the accumulator optimizer and UI edge calculation.
 
-        h_pmf = poisson_pmf(np.arange(10), l_home)
-        a_pmf = poisson_pmf(np.arange(10), l_away)
+        # FIX 9: H2H adjustment BEFORE matrix build so it actually affects probabilities
+        h2h = self.get_h2h_history(home_team, away_team, df)
+        if h2h:
+            n_games = h2h['h_wins'] + h2h['a_wins'] + h2h['draws']
+            h2h_scale = 0.01 + 0.03 * (n_games / 5)
+            # At 5 games: scale = 0.04 (×1.04 max)
+            # At 1 game:  scale = 0.016 (barely moves λ)
+            if h2h['h_wins'] > h2h['a_wins']:
+                l_home *= (1.0 + h2h_scale)
+            elif h2h['a_wins'] > h2h['h_wins']:
+                l_away *= (1.0 + h2h_scale)
+
+        # FIX 1: 12×12 matrix (k=0..11)
+        h_pmf = poisson_pmf(np.arange(12), l_home)
+        a_pmf = poisson_pmf(np.arange(12), l_away)
         matrix = np.outer(h_pmf, a_pmf)
 
         for i in range(2):
             for j in range(2):
                 matrix[i, j] *= self.tau_adjustment(i, j, l_home, l_away)
 
-        mc = self.run_monte_carlo(l_home, l_away)
-        h2h = self.get_h2h_history(home_team, away_team, df)
-
-        if h2h:
-            if h2h['h_wins'] > h2h['a_wins']: l_home *= 1.05
-            elif h2h['a_wins'] > h2h['h_wins']: l_away *= 1.05
-
+        # FIX 11: Exact analytical probabilities from the matrix (no Monte Carlo)
         h_win = np.sum(np.tril(matrix, -1))
         draw_prob = np.sum(np.diag(matrix))
         a_win = np.sum(np.triu(matrix, 1))
+
+        # Analytically derived expected points
+        h_xp = (h_win * 3) + (draw_prob * 1)
+        a_xp = (a_win * 3) + (draw_prob * 1)
 
         return {
             "home": home_team, "away": away_team,
             "l_home": l_home, "l_away": l_away,
             "h_win": h_win, "draw": draw_prob, "a_win": a_win,
-            "mc_h_win": mc['h_win'], "mc_draw": mc['draw'], "mc_a_win": mc['a_win'],
-            "h_xp": mc['h_xp'], "a_xp": mc['a_xp'],
+            # FIX 11: mc_ keys point to matrix-derived values (no frontend breakage)
+            "mc_h_win": h_win, "mc_draw": draw_prob, "mc_a_win": a_win,
+            "h_xp": h_xp, "a_xp": a_xp,
+            "mc_h_xp": h_xp, "mc_a_xp": a_xp,
             "btts": (1 - h_pmf[0]) * (1 - a_pmf[0]),
             "over25": 1 - np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)]),
             "under25": np.sum([h_pmf[i]*a_pmf[j] for i in range(3) for j in range(3-i)]),
@@ -433,11 +421,13 @@ class MatchPredictor:
             "pts_a": league_table.get(away_team, {}).get('pts', 0),
             "h2h": h2h, "ped_h": h_ped, "ped_a": a_ped, "val_h": h_val, "val_a": a_val,
             "clin_h": h_clin, "clin_a": a_clin,
-            "is_ucl": is_ucl
+            "is_ucl": is_ucl,
+            "live_odds": live_odds
         }
 
     def get_recommendations(self, res):
-        """Statistical engine providing three levels of tactical recommendations."""
+        """Statistical engine providing three levels of tactical recommendations.
+        FIX 11: All mc_ keys now reference exact matrix-derived probabilities."""
         h_xg, a_xg = res['l_home'], res['l_away']
         
         # 1. Primary Pick (The Core Direction)
@@ -647,6 +637,3 @@ class AccumulatorOptimizer:
              return best_acca
              
         return best_acca
-
-
-
