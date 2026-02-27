@@ -34,7 +34,6 @@
         <nav class="sidebar">
             <h3 style="color:white; margin-bottom: 30px; font-size: 1.2rem;">NAVIGATION</h3>
             <a href="#" class="nav-link active" onclick="switchView('tactical')">Tactical Core</a>
-            <a href="#" class="nav-link" onclick="switchView('history')">Prediction History</a>
             <a href="top_picks.html" class="nav-link">Top Picks</a>
         </nav>
 
@@ -89,38 +88,7 @@
             </main>
         </div>
 
-        <!-- View: History -->
-        <div id="view-history" style="display: none;">
-            <div class="glass-card" style="max-width: 900px; margin: 0 auto;">
-                <h2 style="margin-bottom: 20px; color: var(--accent-glow);">PREDICTION PERFORMANCE</h2>
 
-                <div class="filter-bar">
-                    <button class="filter-btn active" onclick="filterHistory('all')">ALL</button>
-                    <button class="filter-btn" onclick="filterHistory('won')">WINS</button>
-                    <button class="filter-btn" onclick="filterHistory('lost')">LOSSES</button>
-                    <button class="filter-btn" onclick="filterHistory('pending')">PENDING</button>
-                    <button class="filter-btn" onclick="clearHistory()"
-                        style="margin-left: auto; color: #f43f5e;">Reset</button>
-                </div>
-
-                <div class="history-table-container">
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Match</th>
-                                <th>Prediction</th>
-                                <th>Self-Grade</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="history-tbody">
-                            <!-- Injected JS -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
     </div>
 </body>
 

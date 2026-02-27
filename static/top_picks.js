@@ -22,6 +22,7 @@ async function loadTopPicks(offset = 0) {
         if (data.picks && data.picks.length > 0) {
             content.style.display = 'block';
             renderTopPicks(data.picks, data.statistical_rationale);
+            updateNavigation(offset);
         } else {
             content.style.display = 'none';
             noBet.style.display = 'block';
@@ -29,11 +30,12 @@ async function loadTopPicks(offset = 0) {
             if (reason) reason.textContent = data.message || "Market Too Efficient (No Value Found)";
 
             if (nextDayBtn && offset < 5) {
-                nextDayBtn.style.display = 'inline-block';
+                nextDayBtn.style.display = 'inline-flex';
                 const d = new Date();
                 d.setDate(d.getDate() + offset + 1);
-                const nextDateStr = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(d);
-                nextDayBtn.textContent = `Search ${nextDateStr}`;
+                const options = { weekday: 'short', month: 'short', day: 'numeric' };
+                const nextDateStr = new Intl.DateTimeFormat('en', options).format(d).toUpperCase();
+                nextDayBtn.innerHTML = `REVEAL ${nextDateStr} &nbsp; →`;
             }
         }
     } catch (e) {
@@ -84,6 +86,35 @@ function getDateBadge(dateStr) {
 
 function searchNextDay() {
     loadTopPicks(currentDateOffset + 1);
+}
+
+function searchPrevDay() {
+    if (currentDateOffset > 0) {
+        loadTopPicks(currentDateOffset - 1);
+    }
+}
+
+function updateNavigation(offset) {
+    const prevBtn = document.getElementById('prev-day-btn-results');
+    const nextBtn = document.getElementById('next-day-btn-results');
+    const dateDisplay = document.getElementById('current-date-display');
+
+    if (prevBtn) {
+        prevBtn.style.visibility = offset > 0 ? 'visible' : 'hidden';
+        prevBtn.disabled = offset <= 0;
+    }
+    if (nextBtn) {
+        nextBtn.style.visibility = offset < 6 ? 'visible' : 'hidden'; // Limit to 6 days ahead
+        nextBtn.disabled = offset >= 6;
+    }
+
+    if (dateDisplay) {
+        const d = new Date();
+        d.setDate(d.getDate() + offset);
+        const options = { weekday: 'short', month: 'short', day: 'numeric' };
+        const dateStr = new Intl.DateTimeFormat('en', options).format(d);
+        dateDisplay.textContent = offset === 0 ? "TODAY" : dateStr.toUpperCase();
+    }
 }
 
 // Run on load

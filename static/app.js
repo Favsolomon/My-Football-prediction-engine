@@ -1,7 +1,6 @@
 const API_BASE = '/api';
 let currentLeague = 'Premier League';
 let leagues = [];
-let historyData = [];
 let globalFixtures = [];
 
 // Initialize the application
@@ -9,8 +8,6 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
     try {
-        loadHistory(); // Load from local storage
-
         // ⚡ SPEED GAIN: Only wait for the essential UI components
         const [leaguesRes, fixturesRes] = await Promise.all([
             fetch(`${API_BASE}/leagues`),
@@ -53,111 +50,11 @@ function toggleMenu() {
 
 function switchView(viewName) {
     toggleMenu(); // Close menu
-    if (viewName === 'tactical') {
-        document.getElementById('view-tactical').style.display = 'block';
-        document.getElementById('view-history').style.display = 'none';
-
-        // Re-render fixtures if needed or just show the view
-        // The view state is preserved in DOM, so just switching display is fine
-    } else {
-        document.getElementById('view-tactical').style.display = 'none';
-        document.getElementById('view-history').style.display = 'block';
-        renderHistory();
-    }
+    // Prediction History view has been removed. Tactical Core is the primary view.
+    document.getElementById('view-tactical').style.display = 'block';
 }
 
-// --- HISTORY LOGIC ---
-function loadHistory() {
-    const stored = localStorage.getItem('betly_history');
-    if (stored) {
-        historyData = JSON.parse(stored);
-    }
-}
 
-function saveHistory() {
-    localStorage.setItem('betly_history', JSON.stringify(historyData));
-}
-
-function addToHistory(pred, recs) {
-    // Check if already exists (prevent dupes on re-click)
-    const id = `${pred.home}-${pred.away}-${new Date().toDateString()}`;
-    if (historyData.some(h => h.id === id)) return;
-
-    const item = {
-        id: id,
-        date: new Date().toISOString(),
-        home: pred.home,
-        away: pred.away,
-        league: currentLeague,
-        predicted_score: pred.predicted_score,
-        primary_pick: recs.primary.pick,
-        result: '?',
-        status: 'pending' // pending, won, lost
-    };
-    historyData.unshift(item); // Add to top
-    if (historyData.length > 50) historyData.pop(); // Limit to 50
-    saveHistory();
-}
-
-function renderHistory(filter = 'all') {
-    const tbody = document.getElementById('history-tbody');
-    if (!tbody) return;
-
-    let filtered = historyData;
-    if (filter !== 'all') {
-        filtered = historyData.filter(h => h.status === filter);
-    }
-
-    if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 30px; color: var(--text-secondary);">No records found.</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = filtered.map(item => `
-        <tr>
-            <td>${new Date(item.date).toLocaleDateString()}</td>
-            <td><span style="font-weight:600; color: var(--text-primary);">${item.home}</span> vs ${item.away}</td>
-            <td>
-                <div style="font-weight:700;">${item.primary_pick}</div>
-                <div style="font-size:0.75rem; opacity:0.7;">Score: ${item.predicted_score}</div>
-            </td>
-            <td>
-                <div style="display:flex; gap:5px;">
-                    <button onclick="updateStatus('${item.id}', 'won')" style="background:rgba(16,185,129,0.2); border:none; color:#10b981; cursor:pointer; padding:2px 6px; border-radius:4px;">✔</button>
-                    <button onclick="updateStatus('${item.id}', 'lost')" style="background:rgba(244,63,94,0.2); border:none; color:#f43f5e; cursor:pointer; padding:2px 6px; border-radius:4px;">✘</button>
-                </div>
-            </td>
-            <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-        </tr>
-    `).join('');
-
-    // Update filter buttons
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-    // Ideally we'd set active class on the clicked button based on the filter argument
-    // But for now keeping it simple as per original
-}
-
-function updateStatus(id, newStatus) {
-    const item = historyData.find(h => h.id === id);
-    if (item) {
-        item.status = newStatus;
-        item.result = newStatus === 'won' ? 'Correct' : 'Incorrect';
-        saveHistory();
-        renderHistory();
-    }
-}
-
-function filterHistory(status) {
-    renderHistory(status);
-}
-
-function clearHistory() {
-    if (confirm("Clear all prediction history?")) {
-        historyData = [];
-        saveHistory();
-        renderHistory();
-    }
-}
 
 function renderTabs() {
     const container = document.getElementById('league-tabs');
@@ -271,9 +168,6 @@ async function getPrediction(home, away, leagueOverride = null) {
 
         const data = await res.json();
         renderResults(data);
-
-        // Save to History automatically
-        addToHistory(data.prediction, data.recommendations);
 
         display.style.opacity = '1';
         display.scrollIntoView({ behavior: 'smooth' });
