@@ -318,3 +318,25 @@ h1 {
         font-size: 1rem;
     }
 }
+
+/* Action Button */
+.action-button {
+    display: inline-block;
+    margin-top: 1.2rem;
+    padding: 12px 28px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    letter-spacing: 0.5px;
+}
+
+.action-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+}

@@ -4,12 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Betly AI | Quant Optimizer</title>
+    <title>Betly AI | Top Picks</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/accumulator.css">
-    <script src="/static/accumulator.js" defer></script>
+    <link rel="stylesheet" href="/static/top_picks.css">
+    <script src="/static/top_picks.js" defer></script>
 </head>
 
 <body>
@@ -19,8 +19,8 @@
         </a>
 
         <header>
-            <h1>QUANT OPTIMIZER</h1>
-            <p class="subtitle">Alpha-Edge Accumulator Service</p>
+            <h1>TOP PICKS</h1>
+            <p class="subtitle">Best Selections & High Value Plays</p>
         </header>
 
         <!-- Status Banner -->
@@ -28,15 +28,16 @@
 
         <!-- State: Loading -->
         <div id="loading-state">
-            <div class="pulse-text">CALCULATING ALPHA EDGES</div>
-            <p style="color: var(--text-secondary); font-size: 0.9rem;">Running Monte Carlo simulations across active
-                leagues...</p>
+            <div class="pulse-text">FINDING HIGH VALUE SELECTIONS</div>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">Crunching data across all active leagues...</p>
         </div>
 
         <!-- State: No Bet -->
         <div id="no-bet-state">
-            <div class="no-bet-title">MARKET TOO EFFICIENT</div>
-            <p>No mathematical edges found meeting the 1.05 Kelly threshold today.</p>
+            <div class="no-bet-title">NO HIGH VALUE PLAYS TODAY</div>
+            <p>No mathematical edges were found meeting strict thresholds.</p>
+            <button id="next-day-btn" class="action-button" style="display: none;" onclick="searchNextDay()">Search Next
+                Day</button>
         </div>
 
         <!-- State: Result Content -->
@@ -44,8 +45,9 @@
             <div class="ticket-card">
                 <div class="ticket-header">
                     <div>
-                        <div class="ticket-title">ANALYST'S ACCUMULATOR</div>
-                        <div class="ticket-id">QUANT-ACCA-2025-05-20</div>
+                        <div class="ticket-title">TODAY'S TOP PICKS</div>
+                        <div class="ticket-id" id="ticket-id"
+                            style="font-size: 0.8rem; font-weight: bold; margin-top: 5px;"></div>
                     </div>
                 </div>
 
@@ -53,8 +55,8 @@
                     <!-- Legs injected via JS -->
                 </div>
 
-                <div class="rationale-box">
-                    "Optimized across 6 leagues. High conviction in defensive metrics and home advantage weighting."
+                <div class="rationale-box" id="rationale-box">
+                    "Daily curated high-value selections."
                 </div>
             </div>
         </div>

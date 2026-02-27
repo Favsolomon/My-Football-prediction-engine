@@ -16,7 +16,7 @@ from src.engine import MatchPredictor
 from src.config import ODDS_API_KEY, LEAGUES_UNDERSTAT, LEAGUES_ODDS_API
 import uvicorn
 import concurrent.futures
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- Server-Side Verification Cache ---
 # Simple in-memory cache to prevent re-fetching data when calling both endpoints in parallel
@@ -95,9 +95,9 @@ async def get_all_fixtures(season: str = "2025"):
 async def read_index():
     return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'index.html'))
 
-@app.get("/accumulator.html")
-async def read_accumulator():
-    return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'accumulator.html'))
+@app.get("/top_picks.html")
+async def read_top_picks():
+    return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'top_picks.html'))
 
 @app.get("/api/leagues")
 async def get_leagues():
@@ -231,22 +231,36 @@ def get_daily_candidates(season, min_edge=0.03):
                         if oc['market'] == "Goals":
                             price = odds['totals'].get('over25') if "2.5" in oc['selection'] else odds['totals'].get('over15')
                     
-                    if not price or price <= 1.01: continue
+                    if not price or price <= 1.01:
+                        # No real odds available — include pick but without odds/edge data
+                        oc['decimal_odds'] = None
+                        oc['implied_prob'] = None
+                        oc['edge'] = 0
+                        league_candidates.append({
+                            **oc,
+                            "fixture": f"{f['Home']} vs {f['Away']}",
+                            "match_date": match_date_str,
+                            "league": league_name,
+                            "edge_percent": 0,
+                            "independence_factor": "Diversified",
+                            "has_odds": False
+                        })
+                        continue
                     
                     oc['decimal_odds'] = price
                     oc['implied_prob'] = 1/price
                     oc['edge'] = oc['true_prob'] - oc['implied_prob']
                     
-                    # Store ALL valid candidates (Edge >= 0) in cache
-                    if oc['edge'] >= 0.0:
-                        league_candidates.append({
-                            **oc,
-                            "fixture": f"{f['Home']} vs {f['Away']}",
-                            "match_date": match_date_str, # Store date for filtering
-                            "league": league_name,
-                            "edge_percent": round(oc['edge'] * 100, 1),
-                            "independence_factor": "Diversified"
-                        })
+                    # Store all candidates; sorting will prioritize positive edges later
+                    league_candidates.append({
+                        **oc,
+                        "fixture": f"{f['Home']} vs {f['Away']}",
+                        "match_date": match_date_str, # Store date for filtering
+                        "league": league_name,
+                        "edge_percent": round(oc['edge'] * 100, 1),
+                        "independence_factor": "Diversified",
+                        "has_odds": True
+                    })
         except Exception as e:
             print(f"Error processing {league_name}: {e}")
         return league_candidates
@@ -267,96 +281,53 @@ def get_daily_candidates(season, min_edge=0.03):
 
 
 @app.get("/api/top-picks")
-def get_top_picks(season: str = "2025"):
-    """Returns top 6 picks. Prioritizes Today, extends to Future if needed."""
-    # 1. Fetch wide net (Today + 2 days), strict edge
-    candidates = get_daily_candidates(season, min_edge=0.03) 
-    
-    if not candidates:
-        # Try relaxed if strict returns nothing
-        candidates = get_daily_candidates(season, min_edge=0.0)
+def get_top_picks(season: str = "2025", offset: int = 0):
+    """Returns the top mathematical edges for the specified offset without accumulator constraints."""
+    # Pass a negative min_edge to capture all candidates in cache
+    candidates = get_daily_candidates(season, min_edge=-1.0)
 
-    # 2. Filter logic: Try to fill with TODAY's games first
-    today_str = str(datetime.now().date())
-    today_picks = [c for c in candidates if c.get('match_date') == today_str]
-    future_picks = [c for c in candidates if c.get('match_date') != today_str]
+    target_date = datetime.now().date() + timedelta(days=offset)
+    target_str = str(target_date)
     
-    # Sort both lists by edge
-    today_picks.sort(key=lambda x: x['edge'], reverse=True)
-    future_picks.sort(key=lambda x: x['edge'], reverse=True)
+    # Try target date first
+    target_picks = [c for c in candidates if c.get('match_date') == target_str]
     
-    final_picks = []
+    # Custom sort key: Prefer real odds picks, then positive edge, then highest true_prob
+    sort_key = lambda x: (1 if x.get('has_odds') else 0, x['edge_percent'] if x['edge_percent'] > 0 else 0, x['true_prob'])
     
-    # Take all good today picks (up to 6)
-    final_picks.extend(today_picks)
+    # Deduplicate: Keep only the single best pick per fixture
+    def dedupe_by_fixture(picks):
+        seen = {}
+        for p in picks:
+            fx = p['fixture']
+            if fx not in seen or sort_key(p) > sort_key(seen[fx]):
+                seen[fx] = p
+        return list(seen.values())
+
+    if len(target_picks) > 0:
+        target_picks = dedupe_by_fixture(target_picks)
+        # Only keep good probability picks (>= 60% true probability)
+        target_picks = [p for p in target_picks if p['true_prob'] >= 0.60]
+        target_picks = sorted(target_picks, key=sort_key, reverse=True)
+        return {
+            "picks": target_picks, # Dynamic count based on available quality picks
+            "statistical_rationale": f"High value or mathematically safe selections for {target_str}."
+        }
     
-    # If we have space, fill with future picks (best edges)
-    if len(final_picks) < 6:
-        needed = 6 - len(final_picks)
-        final_picks.extend(future_picks[:needed])
+    if offset > 0:
+        return {"picks": [], "message": f"NO MATCHES SCHEDULED ON {target_str}"}
         
-    # Sanity check (> 45% prob)
-    final_picks = [p for p in final_picks if p['true_prob'] > 0.45]
-    
-    return {"top_picks": final_picks[:6]}
-
-
-@app.get("/api/accumulator")
-def get_smart_accumulator(season: str = "2025"):
-    """Runs the optimizer. Prioritizes Today, allows Future if needed."""
-    from src.engine import AccumulatorOptimizer
-    
-    candidates = get_daily_candidates(season, min_edge=0.03)
-    optimizer = AccumulatorOptimizer()
-    
-    # Try finding acca with TODAY's matches only first
-    today_str = str(datetime.now().date())
-    today_candidates = [c for c in candidates if c.get('match_date') == today_str]
-    
-    result = None
-    rationale_suffix = ""
-    
-    # 1. Strict + Today
-    if len(today_candidates) >= 3:
-        result = optimizer.find_optimal(today_candidates, relaxed_mode=False)
+    # If no picks today, expand to 3-day window
+    if candidates:
+        all_picks = dedupe_by_fixture(candidates)
+        all_picks = [p for p in all_picks if p['true_prob'] >= 0.60]
+        all_picks = sorted(all_picks, key=sort_key, reverse=True)
+        return {
+            "picks": all_picks,
+            "statistical_rationale": "Rolling 3-day window best selections."
+        }
         
-    # 2. Relaxed + Today (if strict failed)
-    if not result:
-        # Re-fetch relaxed
-        all_relaxed = get_daily_candidates(season, min_edge=0.00)
-        today_relaxed = [c for c in all_relaxed if c.get('match_date') == today_str]
-        if len(today_relaxed) >= 3:
-            result = optimizer.find_optimal(today_relaxed, relaxed_mode=True)
-            rationale_suffix = " (Relaxed constraints)"
-
-    # 3. Multi-Day (if Today failed completely)
-    if not result:
-        # Use ALL candidates (Today + Future)
-        print("Today's matches insufficient. Expanding to 3-day window...")
-        if candidates:
-            result = optimizer.find_optimal(candidates, relaxed_mode=False)
-            rationale_suffix = " (Multi-day Selection)"
-            
-        if not result: 
-            # Relaxed + Multi-Day
-             all_relaxed = get_daily_candidates(season, min_edge=0.00)
-             if all_relaxed:
-                 result = optimizer.find_optimal(all_relaxed, relaxed_mode=True)
-                 rationale_suffix = " (Multi-day, Relaxed)"
-
-    if not result:
-        return {"accumulator": None, "message": "NO BET – Market Too Efficient (No Value Found)"}
-        
-    result['legs'] = list(result['legs'])
-    return {
-        "accumulator": result,
-        "statistical_rationale": f"Optimized across {len(LEAGUES_UNDERSTAT)} leagues. Selection prioritizes alpha edges.{rationale_suffix}"
-    }
-        
-
-def from_src_engine_accumulator_optimizer():
-    from src.engine import AccumulatorOptimizer
-    return AccumulatorOptimizer()
+    return {"picks": [], "message": "NO MATCHES AVAILABLE IN SYSTEM."}
 
 if __name__ == "__main__":
     uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
