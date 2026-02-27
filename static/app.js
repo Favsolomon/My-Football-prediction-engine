@@ -237,8 +237,7 @@ function renderResults(data) {
     // Picks
     const types = [
         { key: 'primary', grad: 'var(--hero-grad)', class: 'pick-primary' },
-        { key: 'safety', grad: 'var(--safety-grad)', class: 'pick-safety' },
-        { key: 'tactical', grad: 'var(--value-grad)', class: 'pick-risky' }
+        { key: 'safety', grad: 'var(--safety-grad)', class: 'pick-safety' }
     ];
 
     document.getElementById('picks-grid').innerHTML = types.map(t => {

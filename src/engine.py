@@ -426,11 +426,11 @@ class MatchPredictor:
         }
 
     def get_recommendations(self, res):
-        """Statistical engine providing three levels of tactical recommendations.
+        """Statistical engine providing two high-probability tactical recommendations.
         FIX 11: All mc_ keys now reference exact matrix-derived probabilities."""
         h_xg, a_xg = res['l_home'], res['l_away']
         
-        # 1. Primary Pick (The Core Direction)
+        # 1. Main Prediction (The Core Direction)
         if a_xg > 2.25 and h_xg > 1.60:
             primary_pick = "BTTS (Yes)"
             primary_insight = "Both teams are scoring for fun lately. Expect goals at both ends."
@@ -447,29 +447,7 @@ class MatchPredictor:
             primary_pick = "Away/Draw (X2)"
             primary_insight = "The away team is strong enough to at least get a draw here."
 
-        # 2. Risky Value Pick (The 'High Growth' Analytical Choice)
-        # Focuses on 55-68% range outcomes that aren't the primary
-        tactical_pick = None
-        tactical_insight = ""
-        
-        t_candidates = []
-        if primary_pick != "BTTS (Yes)": t_candidates.append(("BTTS (Yes)", "Both teams have a strong habit of scoring recently.", res['btts']))
-        if primary_pick != "Over 2.5 Goals": t_candidates.append(("Over 2.5 Goals", "A good chance we see at least three goals here.", res['over25']))
-        if "Win" not in primary_pick:
-            t_candidates.append((f"{res['home']} Win", "Low-tier teams often struggle here; home win is plausible.", res['mc_h_win']))
-            t_candidates.append((f"{res['away']} Win", "Visitors have the tactical edge to take the full points.", res['mc_a_win']))
-        
-        # Filter for 'Risky but Probable' (~55-70%)
-        t_viable = [c for c in t_candidates if 0.50 < c[2] < 0.70]
-        if t_viable:
-            t_viable.sort(key=lambda x: x[2], reverse=True)
-            tactical_pick, tactical_insight = t_viable[0][0], t_viable[0][1]
-        else:
-            # Fallback for Tactical
-            tactical_pick = "Over 2.5 Goals" if res['over25'] > 0.45 else "Under 3.5 Goals"
-            tactical_insight = "A high-risk analytical choice based on recent variance patterns."
-
-        # 3. Safety Pick (The High Probability Conservative Choice)
+        # 2. Safety Recommendation (The High Probability Conservative Choice)
         # Focuses on >70% probability locks
         safety_candidates = [
             ("Over 1.5 Goals", "Very likely to see at least two goals in this match.", res['over15']),
@@ -482,8 +460,7 @@ class MatchPredictor:
         safety_pick, safety_insight = safety_candidates[0][0], safety_candidates[0][1]
 
         return {
-            "primary": {"pick": primary_pick, "insight": primary_insight, "type": "Primary Pick"},
-            "tactical": {"pick": tactical_pick, "insight": tactical_insight, "type": "Risky Value Pick"},
-            "safety": {"pick": safety_pick, "insight": safety_insight, "type": "Safety Pick"}
+            "primary": {"pick": primary_pick, "insight": primary_insight, "type": "Main Prediction"},
+            "safety": {"pick": safety_pick, "insight": safety_insight, "type": "Safety Recommendation"}
         }
 

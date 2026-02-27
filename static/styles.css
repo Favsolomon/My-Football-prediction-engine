@@ -350,7 +350,7 @@ h1 {
 .picks-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-areas: "primary risky" "safety risky";
+    grid-template-areas: "primary safety";
     gap: 20px;
     margin-bottom: 30px;
 }
@@ -363,14 +363,10 @@ h1 {
     grid-area: safety;
 }
 
-.pick-risky {
-    grid-area: risky;
-}
-
 @media (max-width: 600px) {
     .picks-grid {
         grid-template-columns: 1fr;
-        grid-template-areas: "primary" "safety" "risky";
+        grid-template-areas: "primary" "safety";
     }
 }
 
