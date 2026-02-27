@@ -71,55 +71,54 @@ class DataService:
 
     @staticmethod
     def fetch_free_ucl_fixtures():
-        """Senior Scraper: Extracts UCL fixtures with multi-month lookahead and robust parsing."""
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        """Senior Scraper: Extracts UCL fixtures using reliable ESPN JSON API with 60-day lookahead."""
+        from datetime import datetime, timedelta
         
-        # Check current month and Feb 2026 (next round)
-        urls = [
-            "https://www.skysports.com/champions-league-fixtures",
-            "https://www.skysports.com/champions-league-scores-fixtures/2026-02-01"
-        ]
+        # Lookahead 60 days to catch long gaps in UCL schedule
+        today = datetime.now()
+        future = today + timedelta(days=60)
+        start_date = today.strftime('%Y%m%d')
+        end_date = future.strftime('%Y%m%d')
+        
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard?dates={start_date}-{end_date}"
         
         all_fixtures = []
-        import re
-        
-        for url in urls:
-            try:
-                r = requests.get(url, headers=headers, timeout=10)
-                if r.status_code != 200: continue
-                html = r.text
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                events = data.get('events', [])
                 
-                # Split by date headers
-                date_blocks = re.split(r'class="fixres__header"', html)
-                for block in date_blocks[1:]:
-                    date_match = re.search(r'>(.*?)<', block)
-                    if not date_match: continue
-                    date_str = date_match.group(1).strip()
-                    
-                    # Split into individual match items
-                    items = re.split(r'class="fixres__item"', block)
-                    for item in items[1:]:
-                        # Robust team extraction (handles both swap-text and simple spans)
-                        teams = re.findall(r'class="swap-text--heavy">(.*?)</span>', item)
-                        if len(teams) < 2:
-                            # Fallback if swap-text is missing
-                            teams = re.findall(r'class="fixres__team--(?:home|away)".*?<span>(.*?)</span>', item, re.DOTALL)
+                for e in events:
+                    try:
+                        date_str = e['date'].replace('T', ' ').replace('Z', '')
                         
-                        if len(teams) >= 2:
-                            home, away = teams[0].strip(), teams[1].strip()
-                            # Check if it's already finished (has a score)
-                            is_result = "fixres__score" in item
+                        # ESPN guarantees standard 'Home at Away' or similar format but we can extract directly from competitors
+                        competitors = e['competitions'][0]['competitors']
+                        home_team = None
+                        away_team = None
+                        
+                        for c in competitors:
+                            if c['homeAway'] == 'home':
+                                home_team = c['team']['displayName']
+                            else:
+                                away_team = c['team']['displayName']
+                                
+                        if home_team and away_team:
+                            # Normalize names to match the system
+                            h_norm = DataService.normalize_team_name(home_team)
+                            a_norm = DataService.normalize_team_name(away_team)
                             
-                            if not is_result: # We only want upcoming fixtures
-                                all_fixtures.append({
-                                    'Home': home, 'Away': away,
-                                    'xG': np.nan, 'xG.1': np.nan, 'Score': None,
-                                    'DateTime': date_str
-                                })
-            except: continue
+                            all_fixtures.append({
+                                'Home': h_norm, 'Away': a_norm,
+                                'xG': np.nan, 'xG.1': np.nan, 'Score': None,
+                                'DateTime': date_str
+                            })
+                    except: continue
+        except Exception as e:
+            print(f"ESPN Fetch Error: {e}")
             
         df = pd.DataFrame(all_fixtures)
-        # Deduplicate and return
         if not df.empty:
             df = df.drop_duplicates(subset=['Home', 'Away'])
             return df, "OK"
