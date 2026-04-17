@@ -32,7 +32,8 @@ from pathlib import Path
 
 # Mount static files
 static_dir = Path(__file__).resolve().parent.parent / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+if static_dir.exists() and static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Enable CORS for frontend development
 app.add_middleware(
@@ -93,11 +94,17 @@ async def get_all_fixtures(season: str = "2025"):
 @app.get("/")
 @app.get("/index.html")
 async def read_index():
-    return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'index.html'))
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'index.html')
+    if os.path.exists(path):
+        return FileResponse(path)
+    return {"message": "Index managed by Vercel static serving"}
 
 @app.get("/top_picks.html")
 async def read_top_picks():
-    return FileResponse(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'top_picks.html'))
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'top_picks.html')
+    if os.path.exists(path):
+        return FileResponse(path)
+    return {"message": "Top picks managed by Vercel static serving"}
 
 @app.get("/api/leagues")
 async def get_leagues():
