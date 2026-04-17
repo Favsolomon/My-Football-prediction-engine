@@ -1,9 +1,11 @@
+import os
+from dotenv import load_dotenv
 
-# src/config.py
-
+# Load local .env if it exists
+load_dotenv()
 
 # API Keys
-ODDS_API_KEY = "a136f290325a43885ca0bccc99576edb"
+ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 # League Mappings (Understat)
 LEAGUES_UNDERSTAT = {
