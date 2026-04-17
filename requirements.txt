@@ -4,7 +4,7 @@ requests
 lxml
 beautifulsoup4
 html5lib
-understatapi
+understatapi==0.7.0
 fastapi
 uvicorn
 python-multipart
