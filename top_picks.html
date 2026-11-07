@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Betly AI | Top Picks</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/top_picks.css">
+    <script src="/static/top_picks.js" defer></script>
+</head>
+
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">
+            <span>←</span> Back to Tactical Core
+        </a>
+
+        <header>
+            <h1>TOP PICKS</h1>
+            <p class="subtitle">Best Selections & High Value Plays</p>
+        </header>
+
+        <!-- Status Banner -->
+        <div id="status-banner" class="status-banner"></div>
+
+        <!-- State: Loading -->
+        <div id="loading-state">
+            <div class="pulse-text">FINDING HIGH VALUE SELECTIONS</div>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">Crunching data across all active leagues...</p>
+        </div>
+
+        <!-- State: No Bet -->
+        <div id="no-bet-state">
+            <div class="no-bet-title">NO HIGH VALUE PLAYS TODAY</div>
+            <p>No mathematical edges were found meeting strict thresholds.</p>
+            <button id="next-day-btn" class="action-button" style="display: none;" onclick="searchNextDay()">Search Next
+                Day</button>
+        </div>
+
+        <!-- State: Result Content -->
+        <div id="result-content" style="display: none;">
+            <div class="ticket-card">
+                <div class="ticket-header">
+                    <div>
+                        <div class="ticket-title">TODAY'S TOP PICKS</div>
+                        <div class="ticket-id" id="ticket-id"
+                            style="font-size: 0.8rem; font-weight: bold; margin-top: 5px;"></div>
+                    </div>
+                </div>
+
+                <div class="legs-container">
+                    <!-- Legs injected via JS -->
+                </div>
+
+                <div class="rationale-box" id="rationale-box">
+                    "Daily curated high-value selections."
+                </div>
+            </div>
+
+            <!-- Navigation Controls -->
+            <div class="nav-controls">
+                <button id="prev-day-btn-results" class="nav-button" onclick="searchPrevDay()" style="display: none;">←
+                    Prev Day</button>
+                <div id="current-date-display" class="current-date-display"></div>
+                <button id="next-day-btn-results" class="nav-button" onclick="searchNextDay()">Next Day →</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

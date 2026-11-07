@@ -1,0 +1,15 @@
+pandas
+numpy
+requests
+lxml
+beautifulsoup4
+html5lib
+understatapi==0.7.0
+fastapi
+uvicorn
+python-multipart
+cachetools
+fuzzywuzzy
+python-Levenshtein
+aiohttp
+python-dotenv
