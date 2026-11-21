@@ -48,7 +48,7 @@ class MatchPredictionRequest(BaseModel):
     home_team: str
     away_team: str
     league: str
-    season: str = "2025"
+    season: str = "2026"
 
 # --- Prediction Cache (Global Search) ---
 GLOBAL_FIXTURES_CACHE = {
@@ -57,7 +57,7 @@ GLOBAL_FIXTURES_CACHE = {
 }
 
 @app.get("/api/fixtures/all")
-async def get_all_fixtures(season: str = "2025"):
+async def get_all_fixtures(season: str = "2026"):
     # Return cached data if valid (10 minutes)
     now = datetime.now()
     if GLOBAL_FIXTURES_CACHE["data"] and GLOBAL_FIXTURES_CACHE["timestamp"]:
@@ -111,7 +111,7 @@ async def get_leagues():
     return [{"name": name, "code": code} for name, code in LEAGUES_UNDERSTAT.items()]
 
 @app.get("/api/fixtures/{league_name}")
-async def get_fixtures(league_name: str, season: str = "2025"):
+async def get_fixtures(league_name: str, season: str = "2026"):
     if league_name not in LEAGUES_UNDERSTAT:
         raise HTTPException(status_code=404, detail="League not found")
     
@@ -189,7 +189,7 @@ def get_daily_candidates(season, min_edge=0.03):
         league_candidates = []
         try:
             # Use a specific season for UCL if needed
-            season_to_fetch = season if int(season) < 2025 or league_name != "Champions League" else "2024"
+            season_to_fetch = season if int(season) < 2026 or league_name != "Champions League" else "2025"
             _, data = DataService.preload_competition_context(league_name, season_to_fetch)
             upcoming = data.get("upcoming", pd.DataFrame())
             df = data.get("df")
@@ -288,7 +288,7 @@ def get_daily_candidates(season, min_edge=0.03):
 
 
 @app.get("/api/top-picks")
-def get_top_picks(season: str = "2025", offset: int = 0):
+def get_top_picks(season: str = "2026", offset: int = 0):
     """Returns the top mathematical edges for the specified offset without accumulator constraints."""
     # Pass a negative min_edge to capture all candidates in cache
     candidates = get_daily_candidates(season, min_edge=-1.0)
